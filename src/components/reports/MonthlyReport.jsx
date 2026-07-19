@@ -441,15 +441,15 @@ async function exportPatientPDF(row, reportName, recargoRules) {
     doc.text('SII', 19.5, y + 4.5)
   }
 
-  const textX = 18 + logoW + 4
+  const siiTextX = 18 + logoW + 4
   doc.setFont('helvetica', 'bold')
   doc.setFontSize(8)
   doc.setTextColor(50, 50, 80)
-  doc.text('INFORMACIÓN TRIBUTARIA', textX, y + 2.5)
+  doc.text('INFORMACIÓN TRIBUTARIA', siiTextX, y + 2.5)
   doc.setFont('helvetica', 'normal')
   doc.setFontSize(8)
   doc.setTextColor(80, 80, 100)
-  doc.text(`Se emitirá Boleta de Honorarios Electrónica por ${formatCLP(row.montoTotal)} (monto bruto).`, textX, y + 8)
+  doc.text(`Se emitirá Boleta de Honorarios Electrónica por ${formatCLP(row.montoTotal)} (monto bruto).`, siiTextX, y + 8)
   y += 16
 
   doc.save(`informe-${row.patientName.replace(/\s+/g, '-').toLowerCase()}-${reportName?.replace(/\s+/g, '-') ?? 'reporte'}.pdf`)
