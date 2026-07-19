@@ -176,3 +176,21 @@ export async function deleteServiceType(id) {
   requireAuth()
   await withTimeout(deleteDoc(doc(db, 'serviceTypes', id)), 10000, 'eliminar tipo de servicio')
 }
+
+// ── Reglas de recargo por horario ─────────────────────────────────────────────
+
+const DEFAULT_RECARGO_RULES_FS = {
+  fds:            { desdeDia: 5, desdeHora: 20 },
+  fueraDeHorario: { hora: 20 },
+}
+
+export async function getRecargoRules() {
+  const snap = await withTimeout(getDoc(doc(db, 'config', 'recargoRules')), 8000, 'obtener reglas de recargo')
+  if (!snap.exists()) return DEFAULT_RECARGO_RULES_FS
+  return { ...DEFAULT_RECARGO_RULES_FS, ...snap.data() }
+}
+
+export async function saveRecargoRules(rules) {
+  requireAuth()
+  await withTimeout(setDoc(doc(db, 'config', 'recargoRules'), rules), 8000, 'guardar reglas de recargo')
+}

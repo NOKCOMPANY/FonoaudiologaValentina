@@ -3,6 +3,7 @@ import { getPrivateEvents } from '../../lib/googleCalendar'
 import { parseEvent } from '../../lib/parseEvent'
 import { getSessionsByPatient, markAttendanceWithPatient } from '../../hooks/useFirestore'
 import { colorVariant } from '../../lib/colorMaps'
+import { detectRecargos } from '../../lib/recargoRules'
 
 function toLocalDateStr(d) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
@@ -26,7 +27,7 @@ function getInitialStatus(existing) {
   return existing.attended ? STATUS.ATTENDED : STATUS.ABSENT
 }
 
-export function BulkAttendance({ accessToken, serviceTypes = [], patients = [], onSaved }) {
+export function BulkAttendance({ accessToken, serviceTypes = [], patients = [], onSaved, recargoRules }) {
   const [open, setOpen]               = useState(false)
   const [selectedPatientId, setSelectedPatientId] = useState('')
   const now = new Date()
@@ -242,6 +243,24 @@ export function BulkAttendance({ accessToken, serviceTypes = [], patients = [], 
                           {formatDateLabel(s.startISO)} · {formatTime(s.startISO)}–{formatTime(s.endISO)}
                         </span>
                         {isModified && <span className="text-xs text-purple font-bold">✎</span>}
+                        {(() => {
+                          const stObj = serviceTypes.find((st) => st.displayName === s.type)
+                          const { esFds, esFuera } = detectRecargos(s.startISO, recargoRules)
+                          return (
+                            <>
+                              {esFds && !stObj?.recargoFds?.activo && (
+                                <span className="text-xs font-bold bg-orange/10 text-orange border border-orange/30 px-2 py-0.5 rounded-full">
+                                  🟠 fds sin recargo
+                                </span>
+                              )}
+                              {esFuera && !stObj?.recargoFuera?.activo && (
+                                <span className="text-xs font-bold bg-teal/10 text-teal border border-teal/30 px-2 py-0.5 rounded-full">
+                                  🕗 f.h. sin recargo
+                                </span>
+                              )}
+                            </>
+                          )
+                        })()}
                       </div>
                     </div>
 
@@ -254,7 +273,7 @@ export function BulkAttendance({ accessToken, serviceTypes = [], patients = [], 
                             ? 'bg-green-500 text-white border-green-500'
                             : 'bg-white text-gray-400 border-gray-200 hover:border-green-300 hover:text-green-600'
                         }`}
-                        title="Asistió"
+                        title="Completado"
                       >✓</button>
                       <button
                         onClick={() => setStatus(idx, STATUS.ABSENT)}

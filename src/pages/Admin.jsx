@@ -6,7 +6,8 @@ import { TokenRefreshBanner } from '../components/ui/TokenRefreshBanner'
 import { PatientManager } from '../components/admin/PatientManager'
 import { ServiceTypeManager } from '../components/admin/ServiceTypeManager'
 import { BulkAttendance } from '../components/admin/BulkAttendance'
-import { getServiceTypes } from '../hooks/useFirestore'
+import { RecargoRulesManager } from '../components/admin/RecargoRulesManager'
+import { getServiceTypes, getRecargoRules } from '../hooks/useFirestore'
 import { setDynamicTypeMap } from '../lib/parseEvent'
 
 function toLocalDateStr(d) {
@@ -21,6 +22,7 @@ export default function Admin() {
   const { user, signOut, accessToken } = useAuth()
   const [selectedDate, setSelectedDate] = useState(new Date())
   const [serviceTypes, setServiceTypes] = useState([])
+  const [recargoRules, setRecargoRules] = useState(null)
 
   // Tipos detectados desde pacientes (callback de PatientManager)
   const [detectedTypes, setDetectedTypes]     = useState([])  // ['Terapia','Test',...]
@@ -48,6 +50,12 @@ export default function Admin() {
   }, [])
 
   useEffect(() => { reloadServiceTypes() }, [reloadServiceTypes])
+
+  useEffect(() => {
+    getRecargoRules()
+      .then(setRecargoRules)
+      .catch((e) => console.error('[Admin] recargoRules:', e))
+  }, [])
 
   // Tipos detectados que NO tienen regla definida en serviceTypes
   const knownDisplayNames = new Set(serviceTypes.map((t) => t.displayName))
@@ -92,6 +100,8 @@ export default function Admin() {
       <div className="max-w-2xl mx-auto px-4 py-6">
         <TokenRefreshBanner />
 
+        <RecargoRulesManager rules={recargoRules} onSaved={setRecargoRules} />
+
         <ServiceTypeManager
           serviceTypes={serviceTypes}
           patientTypeCount={patientTypeCount}
@@ -112,6 +122,7 @@ export default function Admin() {
           serviceTypes={serviceTypes}
           patients={patients}
           onSaved={bumpSessionRefresh}
+          recargoRules={recargoRules}
         />
 
         <div className="flex flex-wrap items-center gap-3 mb-6">
@@ -126,7 +137,7 @@ export default function Admin() {
         </div>
 
         <h2 className="font-heading text-xl text-gray-700 mb-4">Sesiones del día</h2>
-        <PrivateCalendar selectedDate={selectedDate} serviceTypes={serviceTypes} refreshKey={sessionRefreshKey} />
+        <PrivateCalendar selectedDate={selectedDate} serviceTypes={serviceTypes} refreshKey={sessionRefreshKey} recargoRules={recargoRules} />
       </div>
     </div>
   )

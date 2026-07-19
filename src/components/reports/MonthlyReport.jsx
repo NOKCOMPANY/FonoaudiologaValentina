@@ -3,10 +3,11 @@ import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
 import { useAuth } from '../../context/AuthContext'
 import { getPrivateEvents } from '../../lib/googleCalendar'
-import { getSessionsInRange, getAllPatients, getServiceTypes } from '../../hooks/useFirestore'
+import { getSessionsInRange, getAllPatients, getServiceTypes, getRecargoRules } from '../../hooks/useFirestore'
 import { parseEvent } from '../../lib/parseEvent'
 import { LoadingSpinner } from '../ui/LoadingSpinner'
 import { colorVariant, COLORS } from '../../lib/colorMaps'
+import { calcRecargo, DEFAULT_RECARGO_RULES } from '../../lib/recargoRules'
 
 // ── Datos profesionales para membrete PDF ─────────────────────────────────────
 const PROF_INFO = {
@@ -68,7 +69,7 @@ function makeHelpers(serviceTypes) {
 }
 
 // ── Construcción de filas ─────────────────────────────────────────────────────
-function buildUniqueRows(events, sessionMap, patientMap, serviceTypes) {
+function buildUniqueRows(events, sessionMap, patientMap, serviceTypes, recargoRules) {
   const byPatient = {}
 
   events.forEach((ev) => {
@@ -80,9 +81,13 @@ function buildUniqueRows(events, sessionMap, patientMap, serviceTypes) {
     const fullName    = patientMap[pid]?.fullName || null
     const description = patientMap[pid]?.description || null
 
-    const durHours = calcDuration(ev.start?.dateTime, ev.end?.dateTime)
-    const st       = serviceTypes.find((s) => s.displayName === type)
-    const precio   = calcPrecioSesion(st, durHours)
+    const durHours   = calcDuration(ev.start?.dateTime, ev.end?.dateTime)
+    const st         = serviceTypes.find((s) => s.displayName === type)
+    const precioBase = calcPrecioSesion(st, durHours)
+    const recargo    = calcRecargo(ev.start?.dateTime, st, recargoRules)
+    const precio     = precioBase !== undefined
+      ? precioBase + recargo.total
+      : (recargo.total > 0 ? recargo.total : undefined)
 
     if (!byPatient[pid]) {
       byPatient[pid] = {
@@ -97,7 +102,11 @@ function buildUniqueRows(events, sessionMap, patientMap, serviceTypes) {
       startDateTime: ev.start?.dateTime ?? ev.start?.date,
       endDateTime:   ev.end?.dateTime   ?? ev.end?.date,
       type, attended: sess?.attended, notes: sess?.notes ?? '',
-      durHours, precio,
+      durHours, precio, precioBase,
+      recargoFds:   recargo.montoFds,
+      recargoFuera: recargo.montoFuera,
+      esFds:        recargo.esFds,
+      esFuera:      recargo.esFuera,
     })
 
     byPatient[pid].total++
@@ -137,6 +146,24 @@ function buildUniqueRows(events, sessionMap, patientMap, serviceTypes) {
     .sort((a, b) => a.patientName.localeCompare(b.patientName, 'es'))
 }
 
+// ── Logo SII — carga el SVG de /public y lo convierte a PNG para jsPDF ───────
+function loadSiiLogoPng(w = 80, h = 68) {
+  return new Promise((resolve) => {
+    const img = new window.Image()
+    img.onload = () => {
+      try {
+        const canvas = document.createElement('canvas')
+        canvas.width  = w * 3
+        canvas.height = h * 3
+        canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height)
+        resolve(canvas.toDataURL('image/png'))
+      } catch { resolve(null) }
+    }
+    img.onerror = () => resolve(null)
+    img.src = '/sii-logo.svg'
+  })
+}
+
 // ── Membrete jsPDF ────────────────────────────────────────────────────────────
 function drawHeader(doc, y = 14) {
   const purple = [124, 58, 237]
@@ -164,7 +191,13 @@ function drawHeader(doc, y = 14) {
 }
 
 // ── PDF individual paciente ───────────────────────────────────────────────────
-function exportPatientPDF(row, reportName) {
+async function exportPatientPDF(row, reportName, recargoRules) {
+  const siiLogoPng = await loadSiiLogoPng(400, 340)
+  const DIAS_LABEL = ['Domingo','Lunes','Martes','Miércoles','Jueves','Viernes','Sábado']
+  const rr        = recargoRules ?? DEFAULT_RECARGO_RULES
+  const fdsHoraL  = rr.fds?.desdeHora ?? 20
+  const fdsDiaL   = DIAS_LABEL[rr.fds?.desdeDia ?? 5]
+  const fhHoraL   = rr.fueraDeHorario?.hora ?? 20
   const doc    = new jsPDF()
   const purple = [124, 58, 237]
   const gray   = [100, 100, 100]
@@ -196,7 +229,7 @@ function exportPatientPDF(row, reportName) {
   doc.setFont('helvetica', 'normal')
   doc.setFontSize(9.5)
   doc.setTextColor(...gray)
-  doc.text(`Asistencia global: ${row.pct}%  (${row.attended} de ${row.total} sesiones agendadas)`, 14, y); y += 7
+  doc.text(`Asistencia global: ${row.pct}%  (${row.attended} completadas de ${row.total} sesiones agendadas)`, 14, y); y += 7
 
   // ── Tabla resumen por tipo de servicio ────────────────────────────────────
   const typeEntries = Object.entries(row.typeCounts).filter(([, tc]) => tc.total > 0)
@@ -221,7 +254,7 @@ function exportPatientPDF(row, reportName) {
 
   autoTable(doc, {
     startY: y,
-    head: [['Servicio', 'Horas', 'Agendadas', 'Asistidas', 'A. no efect.', 'Monto Bruto']],
+    head: [['Servicio', 'Horas', 'Agendadas', 'Completadas', 'A. no efect.', 'Monto Bruto']],
     body: serviceRows,
     headStyles: { fillColor: purple, fontStyle: 'bold', fontSize: 9 },
     alternateRowStyles: { fillColor: [253, 248, 240] },
@@ -284,13 +317,18 @@ function exportPatientPDF(row, reportName) {
           : '—'
         const dur    = s.durHours !== undefined ? formatHours(s.durHours) : '—'
         const estado = s.attended === true
-          ? '✓ Asistió'
+          ? '✓ Completado'
           : s.attended === false
             ? '✗ Agenda no efectuada'
             : '— Sin registrar'
-        const precio = s.precio !== undefined ? formatCLP(s.precio) : '—'
+        const recargoExtra = (s.recargoFds ?? 0) + (s.recargoFuera ?? 0)
+        const precioLabel  = s.precio !== undefined
+          ? recargoExtra > 0
+            ? `${formatCLP(s.precio)}\n(+${formatCLP(recargoExtra)} ${s.esFds ? 'fds' : 'f.h.'})`
+            : formatCLP(s.precio)
+          : '—'
         if (idx === 0) dayHeaderIdxs.push(allRows.length)
-        allRows.push([idx === 0 ? capLabel : '', `${ini}–${fin}`, dur, s.type, estado, precio])
+        allRows.push([idx === 0 ? capLabel : '', `${ini}–${fin}`, dur, s.type, estado, precioLabel])
       })
 
       // Fila subtotal del día
@@ -343,6 +381,15 @@ function exportPatientPDF(row, reportName) {
     })
     y = doc.lastAutoTable.finalY + 4
 
+    // Nota regla de recargo (solo si hay sesiones con recargo aplicado)
+    const hasRecargo = (row.sessions ?? []).some((s) => (s.recargoFds ?? 0) + (s.recargoFuera ?? 0) > 0)
+    if (hasRecargo) {
+      doc.setFont('helvetica', 'italic')
+      doc.setFontSize(7.5)
+      doc.setTextColor(130, 130, 130)
+      doc.text(`† Recargo fin de semana: desde ${fdsDiaL} ${fdsHoraL}:00 (sáb y dom todo el día). Recargo fuera de horario: desde las ${fhHoraL}:00 en días laborales.`, 14, y)
+      y += 5
+    }
     // Nota terminológica
     doc.setFont('helvetica', 'italic')
     doc.setFontSize(7.5)
@@ -354,24 +401,27 @@ function exportPatientPDF(row, reportName) {
   // ── Glosa SII compacta ────────────────────────────────────────────────────
   if (y + 14 > 280) { doc.addPage(); y = 20 }
 
-  // Logo SII (recuadro rojo)
-  const siiRed = [180, 0, 0]
-  doc.setFillColor(...siiRed)
-  doc.roundedRect(14, y - 1, 11, 7, 1, 1, 'F')
-  doc.setFont('helvetica', 'bold')
-  doc.setFontSize(8)
-  doc.setTextColor(255, 255, 255)
-  doc.text('SII', 15.8, y + 4)
+  // Logo SII real (SVG convertido a PNG) — o fallback textual si falla la carga
+  const logoW = 9; const logoH = Math.round(logoW * 340 / 400)  // mantiene ratio 400:340
+  if (siiLogoPng) {
+    doc.addImage(siiLogoPng, 'PNG', 14, y - 1, logoW, logoH)
+  } else {
+    doc.setFillColor(0, 97, 160)
+    doc.roundedRect(14, y - 1, 14, 10, 1, 1, 'F')
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(8); doc.setTextColor(255, 255, 255)
+    doc.text('SII', 16.5, y + 5.5)
+  }
 
   // Texto informativo
-  doc.setFont('helvetica', 'normal')
+  const textX = 14 + logoW + 4
+  doc.setFont('helvetica', 'bold')
   doc.setFontSize(8.5)
   doc.setTextColor(60, 60, 60)
-  doc.text('INFORMACIÓN TRIBUTARIA', 28, y + 2)
+  doc.text('INFORMACIÓN TRIBUTARIA', textX, y + 2)
   doc.setFont('helvetica', 'normal')
   doc.setFontSize(8)
   doc.setTextColor(80, 80, 80)
-  doc.text(`Se emitirá Boleta de Honorarios Electrónica por ${formatCLP(row.montoTotal)} (monto bruto).`, 28, y + 7)
+  doc.text(`Se emitirá Boleta de Honorarios Electrónica por ${formatCLP(row.montoTotal)} (monto bruto).`, textX, y + 7)
   y += 14
 
   doc.save(`informe-${row.patientName.replace(/\s+/g, '-').toLowerCase()}-${reportName?.replace(/\s+/g, '-') ?? 'reporte'}.pdf`)
@@ -444,7 +494,7 @@ function exportPDF(rows, name) {
 
   autoTable(doc, {
     startY: y,
-    head: [['Paciente', 'Servicios', 'Agendadas', 'Asistidas', 'No efect.', '%', 'Monto Bruto']],
+    head: [['Paciente', 'Servicios', 'Agendadas', 'Completadas', 'No efect.', '%', 'Monto Bruto']],
     body: rows.map((r) => [
       r.patientName + (r.description ? `\n${r.description}` : ''),
       Object.entries(r.typeCounts)
@@ -469,14 +519,14 @@ function exportPDF(rows, name) {
   doc.setFont('helvetica', 'bold')
   doc.setFontSize(10)
   doc.setTextColor(...purple)
-  doc.text(`Total general: ${totalSesiones} sesiones · ${totalAsistidas} asistidas · Monto Bruto: ${formatCLP(totalMonto)}`, 14, yFinal)
+  doc.text(`Total general: ${totalSesiones} sesiones · ${totalAsistidas} completadas · Monto Bruto: ${formatCLP(totalMonto)}`, 14, yFinal)
 
   doc.save(`reporte-${name}.pdf`)
 }
 
 // ── Tabla de reporte (web) ────────────────────────────────────────────────────
 function ReportTable({ report, helpers }) {
-  const { uniqueRows = [], name } = report
+  const { uniqueRows = [], name, recargoRules } = report
   const { textOf, barOf, shortOf } = helpers
 
   if (uniqueRows.length === 0) {
@@ -489,7 +539,7 @@ function ReportTable({ report, helpers }) {
         <table className="w-full text-sm font-body">
           <thead className="bg-purple text-white">
             <tr>
-              {['', 'Paciente', 'Servicios', 'Agendadas', 'Asistidas', 'No efect.', '%', 'Monto Bruto'].map((h, i) => (
+              {['', 'Paciente', 'Servicios', 'Agendadas', 'Completadas', 'No efect.', '%', 'Monto Bruto'].map((h, i) => (
                 <th key={i} className="py-3 px-3 text-left font-bold whitespace-nowrap">{h}</th>
               ))}
             </tr>
@@ -504,7 +554,7 @@ function ReportTable({ report, helpers }) {
                     title="CSV de este paciente"
                   >CSV</button>
                   <button
-                    onClick={() => exportPatientPDF(r, name)}
+                    onClick={() => exportPatientPDF(r, name, recargoRules)}
                     className="bg-purple/10 hover:bg-purple/20 text-purple border border-purple/30 text-xs font-bold px-2 py-1 rounded-full transition"
                     title="PDF de este paciente"
                   >PDF</button>
@@ -543,11 +593,19 @@ function ReportTable({ report, helpers }) {
                   </div>
                 </td>
 
-                <td className="py-3 px-3 text-gray-600 text-center">{r.total}</td>
-                <td className="py-3 px-3 text-green-600 font-bold text-center">{r.attended}</td>
-                <td className="py-3 px-3 text-red-500 font-bold text-center">{r.absent}</td>
+                <td className="py-3 px-3 text-gray-500 text-center font-mono">{r.total}</td>
                 <td className="py-3 px-3 text-center">
-                  <span className={`font-bold ${r.pct >= 80 ? 'text-green-600' : 'text-orange'}`}>{r.pct}%</span>
+                  <span className="inline-block bg-green-100 text-green-700 font-bold text-xs px-2.5 py-0.5 rounded-full">
+                    {r.attended}
+                  </span>
+                </td>
+                <td className="py-3 px-3 text-center">
+                  <span className={`inline-block font-bold text-xs px-2.5 py-0.5 rounded-full ${r.absent > 0 ? 'bg-red-50 text-red-500' : 'text-gray-300'}`}>
+                    {r.absent > 0 ? r.absent : '—'}
+                  </span>
+                </td>
+                <td className="py-3 px-3 text-center">
+                  <span className={`font-bold text-sm ${r.pct >= 80 ? 'text-green-600' : 'text-orange'}`}>{r.pct}%</span>
                 </td>
                 <td className="py-3 px-3 text-right font-mono font-bold text-gray-700 whitespace-nowrap">
                   {r.montoTotal > 0 ? formatCLP(r.montoTotal) : <span className="text-gray-300">—</span>}
@@ -559,8 +617,8 @@ function ReportTable({ report, helpers }) {
           <tfoot className="bg-purple/10 border-t-2 border-purple/20">
             <tr>
               <td colSpan={3} className="py-2 px-3 text-xs font-bold text-purple">Total general</td>
-              <td className="py-2 px-3 text-center font-bold text-gray-700">{uniqueRows.reduce((a, r) => a + r.total, 0)}</td>
-              <td className="py-2 px-3 text-center font-bold text-green-600">{uniqueRows.reduce((a, r) => a + r.attended, 0)}</td>
+              <td className="py-2 px-3 text-center font-mono font-bold text-gray-700">{uniqueRows.reduce((a, r) => a + r.total, 0)}</td>
+              <td className="py-2 px-3 text-center font-bold text-green-700">{uniqueRows.reduce((a, r) => a + r.attended, 0)}</td>
               <td className="py-2 px-3 text-center font-bold text-red-500">{uniqueRows.reduce((a, r) => a + r.absent, 0)}</td>
               <td className="py-2 px-3"></td>
               <td className="py-2 px-3 text-right font-mono font-bold text-purple">
@@ -621,18 +679,19 @@ export function MonthlyReport() {
       const start = new Date(year, month, 1, 0, 0, 0)
       const end   = new Date(year, month + 1, 0, 23, 59, 59)
 
-      const [freshTypes, calData, sessions, patients] = await Promise.all([
+      const [freshTypes, calData, sessions, patients, recargoRules] = await Promise.all([
         getServiceTypes().catch(() => serviceTypes),
         getPrivateEvents(accessToken, start.toISOString(), end.toISOString()),
         getSessionsInRange(start, end).catch(() => []),
         getAllPatients().catch(() => []),
+        getRecargoRules().catch(() => DEFAULT_RECARGO_RULES),
       ])
       setServiceTypes(freshTypes)
 
       const events     = calData.items ?? []
       const sessionMap = Object.fromEntries(sessions.map((s) => [s.calendarEventId, s]))
       const patientMap = Object.fromEntries(patients.map((p) => [p.id, p]))
-      setReport({ name: monthLabel, uniqueRows: buildUniqueRows(events, sessionMap, patientMap, freshTypes) })
+      setReport({ name: monthLabel, uniqueRows: buildUniqueRows(events, sessionMap, patientMap, freshTypes, recargoRules), recargoRules })
     } catch (err) {
       setError(err.message ?? 'Error al generar reporte')
     } finally {

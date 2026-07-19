@@ -20,6 +20,11 @@ function TypeForm({ initial, onSave, onCancel, saving }) {
   const [precioHora, setPrecioHora]   = useState(initial?.precioHora ?? '')
   const [precioFijo, setPrecioFijo]   = useState(initial?.precioFijo ?? '')
   const [horasRef, setHorasRef]       = useState(initial?.horasRef ?? '')
+  // Recargos por horario especial
+  const [recargoFdsActivo,   setRecargoFdsActivo]   = useState(initial?.recargoFds?.activo   ?? false)
+  const [montoFds,           setMontoFds]           = useState(initial?.recargoFds?.monto    ?? '')
+  const [recargoFueraActivo, setRecargoFueraActivo] = useState(initial?.recargoFuera?.activo ?? false)
+  const [montoFuera,         setMontoFuera]         = useState(initial?.recargoFuera?.monto  ?? '')
 
   const handleSubmit = () => {
     if (!displayName.trim()) return
@@ -33,6 +38,8 @@ function TypeForm({ initial, onSave, onCancel, saving }) {
       precioHora: tipoPrecio === 'hora' ? (Number(precioHora) || 0) : 0,
       precioFijo: tipoPrecio === 'fijo' ? (Number(precioFijo) || 0) : 0,
       horasRef:   tipoPrecio === 'fijo' ? (Number(horasRef)   || 0) : 0,
+      recargoFds:   { activo: recargoFdsActivo,   monto: recargoFdsActivo   ? (Number(montoFds)   || 0) : 0 },
+      recargoFuera: { activo: recargoFueraActivo, monto: recargoFueraActivo ? (Number(montoFuera) || 0) : 0 },
     })
   }
 
@@ -144,6 +151,50 @@ function TypeForm({ initial, onSave, onCancel, saving }) {
           </p>
         </div>
       )}
+
+      {/* ── Recargos por horario especial ── */}
+      <div>
+        <label className="text-xs font-bold text-gray-500 mb-2 block">Recargos por horario especial</label>
+        <div className="space-y-2">
+          <div className={`flex items-center gap-3 rounded-xl border px-3 py-2 transition ${recargoFdsActivo ? 'border-orange/40 bg-orange/5' : 'border-gray-200'}`}>
+            <label className="flex items-center gap-2 cursor-pointer flex-1 min-w-0">
+              <input type="checkbox" checked={recargoFdsActivo} onChange={(e) => setRecargoFdsActivo(e.target.checked)} className="accent-orange flex-shrink-0" />
+              <span className="text-xs font-bold text-gray-700">🟠 Fin de semana</span>
+            </label>
+            {recargoFdsActivo && (
+              <div className="flex items-center gap-1 flex-shrink-0">
+                <span className="text-xs text-gray-400">+$</span>
+                <input
+                  type="number" min="0" step="500" placeholder="0"
+                  value={montoFds}
+                  onChange={(e) => setMontoFds(e.target.value)}
+                  className="w-24 border border-gray-200 rounded-xl px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-orange/30"
+                />
+                <span className="text-xs text-gray-400">CLP</span>
+              </div>
+            )}
+          </div>
+          <div className={`flex items-center gap-3 rounded-xl border px-3 py-2 transition ${recargoFueraActivo ? 'border-teal/40 bg-teal/5' : 'border-gray-200'}`}>
+            <label className="flex items-center gap-2 cursor-pointer flex-1 min-w-0">
+              <input type="checkbox" checked={recargoFueraActivo} onChange={(e) => setRecargoFueraActivo(e.target.checked)} className="accent-teal flex-shrink-0" />
+              <span className="text-xs font-bold text-gray-700">🕗 Fuera de horario</span>
+            </label>
+            {recargoFueraActivo && (
+              <div className="flex items-center gap-1 flex-shrink-0">
+                <span className="text-xs text-gray-400">+$</span>
+                <input
+                  type="number" min="0" step="500" placeholder="0"
+                  value={montoFuera}
+                  onChange={(e) => setMontoFuera(e.target.value)}
+                  className="w-24 border border-gray-200 rounded-xl px-2 py-1 text-xs focus:outline-none focus:ring-2 focus:ring-teal/30"
+                />
+                <span className="text-xs text-gray-400">CLP</span>
+              </div>
+            )}
+          </div>
+        </div>
+        <p className="text-xs text-gray-400 mt-1.5">Se suma al precio base cuando el evento cae en ese horario. Configurar las reglas en ⚙️ Reglas de recargo.</p>
+      </div>
 
       <div>
         <label className="text-xs font-bold text-gray-500 mb-2 block">Color del badge</label>
@@ -262,6 +313,12 @@ export function ServiceTypeManager({ serviceTypes, patientTypeCount, unknownType
                         ${t.precioHora.toLocaleString('es-CL')}/hr
                       </span>
                     ) : null}
+                    {t.recargoFds?.activo && t.recargoFds.monto > 0 && (
+                      <span className="text-xs text-orange font-mono flex-shrink-0">🟠 +${t.recargoFds.monto.toLocaleString('es-CL')}</span>
+                    )}
+                    {t.recargoFuera?.activo && t.recargoFuera.monto > 0 && (
+                      <span className="text-xs text-teal font-mono flex-shrink-0">🕗 +${t.recargoFuera.monto.toLocaleString('es-CL')}</span>
+                    )}
                     <span className="text-xs text-gray-400 flex-shrink-0">
                       {patientTypeCount[t.displayName] ?? 0} pac.
                     </span>

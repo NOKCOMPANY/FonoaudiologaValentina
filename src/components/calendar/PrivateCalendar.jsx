@@ -5,6 +5,7 @@ import { LoadingSpinner } from '../ui/LoadingSpinner'
 import { parseEvent } from '../../lib/parseEvent'
 import { markAttendanceWithPatient, getSessionsInRange, updateSessionType } from '../../hooks/useFirestore'
 import { colorVariant } from '../../lib/colorMaps'
+import { detectRecargos } from '../../lib/recargoRules'
 
 function toLocalDateStr(d) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
@@ -18,7 +19,7 @@ function formatTime(dateStr) {
 const DEFAULT_BADGE  = colorVariant('gray', 'badge')
 const DEFAULT_BORDER = colorVariant('gray', 'border')
 
-function SessionCard({ event, existingSession, serviceTypes = [] }) {
+function SessionCard({ event, existingSession, serviceTypes = [], recargoRules }) {
   const parsed    = parseEvent(event.summary ?? '')
   // El tipo del documento Firestore tiene precedencia sobre el título del calendario
   const resolvedType = existingSession?.type || parsed.typeName
@@ -44,6 +45,12 @@ function SessionCard({ event, existingSession, serviceTypes = [] }) {
 
   // Opciones de reclasificación: todos los tipos definidos en Firestore
   const typeOptions = serviceTypes.map((s) => s.displayName)
+
+  // Detección de recargos y advertencias
+  const stObj   = serviceTypes.find((s) => s.displayName === currentType)
+  const { esFds, esFuera } = detectRecargos(event.start?.dateTime, recargoRules)
+  const warnFds   = esFds   && !stObj?.recargoFds?.activo
+  const warnFuera = esFuera && !stObj?.recargoFuera?.activo
 
   useEffect(() => {
     if (existingSession) {
@@ -119,6 +126,20 @@ function SessionCard({ event, existingSession, serviceTypes = [] }) {
               : <span className="text-orange font-medium">⚠ Sin clasificar — renombrar (ej: "BS Nombre")</span>
             }
           </p>
+          {(warnFds || warnFuera) && (
+            <div className="flex gap-1.5 flex-wrap mt-1.5">
+              {warnFds && (
+                <span className="text-xs font-bold bg-orange/10 text-orange border border-orange/30 px-2 py-0.5 rounded-full">
+                  🟠 Fin de semana · sin recargo configurado
+                </span>
+              )}
+              {warnFuera && (
+                <span className="text-xs font-bold bg-teal/10 text-teal border border-teal/30 px-2 py-0.5 rounded-full">
+                  🕗 Fuera de horario · sin recargo configurado
+                </span>
+              )}
+            </div>
+          )}
         </div>
 
         {saved && !editing ? (
@@ -126,7 +147,7 @@ function SessionCard({ event, existingSession, serviceTypes = [] }) {
             <span className={`text-sm font-bold px-3 py-1 rounded-full ${
               status === 'attended' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-600'
             }`}>
-              {status === 'attended' ? '✅ Asistió' : '❌ No asistió'}
+              {status === 'attended' ? '✅ Completado' : '❌ No efectuada'}
             </span>
             <button
               onClick={() => setEditing(true)}
@@ -231,7 +252,7 @@ function SessionCard({ event, existingSession, serviceTypes = [] }) {
   )
 }
 
-export function PrivateCalendar({ selectedDate, serviceTypes = [], refreshKey = 0 }) {
+export function PrivateCalendar({ selectedDate, serviceTypes = [], refreshKey = 0, recargoRules }) {
   const { accessToken } = useAuth()
   const dateStr = toLocalDateStr(selectedDate)
   const { events, loading, error } = usePrivateEvents(accessToken, dateStr)
@@ -271,7 +292,7 @@ export function PrivateCalendar({ selectedDate, serviceTypes = [], refreshKey = 
   return (
     <div className="space-y-3">
       {events.map((event) => (
-        <SessionCard key={event.id} event={event} existingSession={sessionMap[event.id]} serviceTypes={serviceTypes} />
+        <SessionCard key={event.id} event={event} existingSession={sessionMap[event.id]} serviceTypes={serviceTypes} recargoRules={recargoRules} />
       ))}
     </div>
   )
