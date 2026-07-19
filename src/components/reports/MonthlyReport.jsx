@@ -233,11 +233,9 @@ async function exportPatientPDF(row, reportName, recargoRules) {
 
   // ── Tabla resumen por tipo de servicio ────────────────────────────────────
   const typeEntries = Object.entries(row.typeCounts).filter(([, tc]) => tc.total > 0)
-  const totalHoras  = typeEntries.reduce((a, [, tc]) => a + tc.horasAgendadas, 0)
 
   const serviceRows = typeEntries.map(([type, tc]) => [
     type,
-    tc.horasAgendadas > 0 ? formatHours(tc.horasAgendadas) : '—',
     tc.total,
     tc.attended,
     tc.absent,
@@ -245,7 +243,6 @@ async function exportPatientPDF(row, reportName, recargoRules) {
   ])
   serviceRows.push([
     'TOTAL',
-    totalHoras > 0 ? formatHours(totalHoras) : '—',
     row.total,
     row.attended,
     row.absent,
@@ -254,12 +251,17 @@ async function exportPatientPDF(row, reportName, recargoRules) {
 
   autoTable(doc, {
     startY: y,
-    head: [['Servicio', 'Horas', 'Agendadas', 'Completadas', 'A. no efect.', 'Monto Bruto']],
+    head: [['Servicio', 'Agendadas', 'Completadas', 'No efect.', 'Monto Bruto']],
     body: serviceRows,
     headStyles: { fillColor: purple, fontStyle: 'bold', fontSize: 9 },
     alternateRowStyles: { fillColor: [253, 248, 240] },
     styles: { fontSize: 9, cellPadding: 3 },
-    columnStyles: { 1: { halign: 'center' }, 2: { halign: 'center' }, 3: { halign: 'center' }, 4: { halign: 'center' }, 5: { halign: 'right', fontStyle: 'bold' } },
+    columnStyles: {
+      1: { halign: 'center' },
+      2: { halign: 'center' },
+      3: { halign: 'center' },
+      4: { halign: 'right', fontStyle: 'bold' },
+    },
     didParseCell: (data) => {
       if (data.section === 'body' && data.row.index === serviceRows.length - 1) {
         data.cell.styles.fontStyle = 'bold'
@@ -315,65 +317,60 @@ async function exportPatientPDF(row, reportName, recargoRules) {
         const fin    = s.endDateTime?.includes('T')
           ? new Date(s.endDateTime).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' })
           : '—'
-        const dur    = s.durHours !== undefined ? formatHours(s.durHours) : '—'
         const estado = s.attended === true
           ? '✓ Completado'
           : s.attended === false
-            ? '✗ Agenda no efectuada'
+            ? '✗ No efectuada'
             : '— Sin registrar'
         const recargoExtra = (s.recargoFds ?? 0) + (s.recargoFuera ?? 0)
         const precioLabel  = s.precio !== undefined
           ? recargoExtra > 0
-            ? `${formatCLP(s.precio)}\n(+${formatCLP(recargoExtra)} ${s.esFds ? 'fds' : 'f.h.'})`
+            ? `${formatCLP(s.precio)}\n(incl. +${formatCLP(recargoExtra)} ${s.esFds ? 'fds' : 'f.h.'})`
             : formatCLP(s.precio)
           : '—'
         if (idx === 0) dayHeaderIdxs.push(allRows.length)
-        allRows.push([idx === 0 ? capLabel : '', `${ini}–${fin}`, dur, s.type, estado, precioLabel])
+        allRows.push([idx === 0 ? capLabel : '', `${ini}–${fin}`, s.type, estado, precioLabel])
       })
 
       // Fila subtotal del día
       subtotalRowIdxs.push(allRows.length)
       allRows.push([
-        '',
-        `Subtotal ${dayHoras > 0 ? formatHours(dayHoras) : ''}`,
-        '', '', '',
-        dayMonto > 0 ? `${formatCLP(dayMonto)} bruto` : '—',
+        '', 'Subtotal', '', '',
+        dayMonto > 0 ? formatCLP(dayMonto) : '—',
       ])
     })
 
+    // 5 columnas: Fecha | Horario | Tipo | Estado | Precio  (sin Dur.)
     autoTable(doc, {
       startY: y,
-      head: [['Fecha', 'Horario', 'Dur.', 'Tipo', 'Estado', 'Precio']],
+      head: [['Fecha', 'Horario', 'Tipo', 'Estado', 'Monto']],
       body: allRows,
       headStyles: { fillColor: purple, fontStyle: 'bold', fontSize: 9 },
-      alternateRowStyles: {},   // sin alternado automático — manejamos manualmente
+      alternateRowStyles: {},   // manejamos fondo manualmente
       styles: { fontSize: 8.5, cellPadding: 2.5 },
       columnStyles: {
-        0: { cellWidth: 36, fontStyle: 'bold' },
+        0: { cellWidth: 38, fontStyle: 'bold' },
         1: { cellWidth: 28 },
-        2: { cellWidth: 16, halign: 'center' },
-        3: { cellWidth: 26 },
-        4: { cellWidth: 46 },
-        5: { cellWidth: 28, halign: 'right', fontStyle: 'bold' },
+        2: { cellWidth: 28 },
+        3: { cellWidth: 52 },
+        4: { cellWidth: 36, halign: 'right', fontStyle: 'bold' },
       },
       didParseCell: (data) => {
         if (data.section !== 'body') return
         const idx = data.row.index
 
         if (subtotalRowIdxs.includes(idx)) {
-          // Fila subtotal: gris claro, italic
-          data.cell.styles.fillColor  = [242, 242, 248]
-          data.cell.styles.fontStyle  = 'italic'
-          data.cell.styles.textColor  = [90, 90, 110]
+          data.cell.styles.fillColor = [242, 242, 248]
+          data.cell.styles.fontStyle = 'italic'
+          data.cell.styles.textColor = [90, 90, 110]
         } else if (dayHeaderIdxs.includes(idx)) {
-          // Primera fila del día: fondo lavanda muy suave
           data.cell.styles.fillColor = [245, 240, 255]
         }
 
-        // Color del estado
-        if (data.column.index === 4 && !subtotalRowIdxs.includes(idx)) {
+        // Color del estado (col 3 ahora, antes era 4)
+        if (data.column.index === 3 && !subtotalRowIdxs.includes(idx)) {
           const val = data.cell.raw
-          if (val?.includes('✓'))    data.cell.styles.textColor = [22, 163, 74]
+          if (val?.includes('✓'))      data.cell.styles.textColor = [22, 163, 74]
           else if (val?.includes('✗')) data.cell.styles.textColor = [220, 50, 50]
           else                         data.cell.styles.textColor = [150, 150, 150]
         }

@@ -126,17 +126,23 @@ function SessionCard({ event, existingSession, serviceTypes = [], recargoRules }
               : <span className="text-orange font-medium">⚠ Sin clasificar — renombrar (ej: "BS Nombre")</span>
             }
           </p>
-          {(warnFds || warnFuera) && (
+          {(esFds || esFuera) && (
             <div className="flex gap-1.5 flex-wrap mt-1.5">
-              {warnFds && (
-                <span className="text-xs font-bold bg-orange/10 text-orange border border-orange/30 px-2 py-0.5 rounded-full">
-                  🟠 Fin de semana · sin recargo configurado
-                </span>
+              {esFds && (stObj?.recargoFds?.activo && stObj.recargoFds.monto > 0
+                ? <span className="text-xs font-bold bg-green-100 text-green-700 border border-green-300 px-2 py-0.5 rounded-full">
+                    ✓ Fin de semana · +${stObj.recargoFds.monto.toLocaleString('es-CL')} aplicado
+                  </span>
+                : <span className="text-xs font-bold bg-orange/10 text-orange border border-orange/30 px-2 py-0.5 rounded-full">
+                    🟠 Fin de semana · sin recargo configurado
+                  </span>
               )}
-              {warnFuera && (
-                <span className="text-xs font-bold bg-teal/10 text-teal border border-teal/30 px-2 py-0.5 rounded-full">
-                  🕗 Fuera de horario · sin recargo configurado
-                </span>
+              {esFuera && (stObj?.recargoFuera?.activo && stObj.recargoFuera.monto > 0
+                ? <span className="text-xs font-bold bg-green-100 text-green-700 border border-green-300 px-2 py-0.5 rounded-full">
+                    ✓ Fuera de horario · +${stObj.recargoFuera.monto.toLocaleString('es-CL')} aplicado
+                  </span>
+                : <span className="text-xs font-bold bg-teal/10 text-teal border border-teal/30 px-2 py-0.5 rounded-full">
+                    🕗 Fuera de horario · sin recargo configurado
+                  </span>
               )}
             </div>
           )}

@@ -246,17 +246,24 @@ export function BulkAttendance({ accessToken, serviceTypes = [], patients = [], 
                         {(() => {
                           const stObj = serviceTypes.find((st) => st.displayName === s.type)
                           const { esFds, esFuera } = detectRecargos(s.startISO, recargoRules)
+                          const fmtM = (m) => `+$${Number(m).toLocaleString('es-CL')}`
                           return (
                             <>
-                              {esFds && !stObj?.recargoFds?.activo && (
-                                <span className="text-xs font-bold bg-orange/10 text-orange border border-orange/30 px-2 py-0.5 rounded-full">
-                                  🟠 fds sin recargo
-                                </span>
+                              {esFds && (stObj?.recargoFds?.activo && stObj.recargoFds.monto > 0
+                                ? <span className="text-xs font-bold bg-green-100 text-green-700 border border-green-300 px-2 py-0.5 rounded-full">
+                                    ✓ fds {fmtM(stObj.recargoFds.monto)}
+                                  </span>
+                                : <span className="text-xs font-bold bg-orange/10 text-orange border border-orange/30 px-2 py-0.5 rounded-full">
+                                    🟠 fds sin recargo
+                                  </span>
                               )}
-                              {esFuera && !stObj?.recargoFuera?.activo && (
-                                <span className="text-xs font-bold bg-teal/10 text-teal border border-teal/30 px-2 py-0.5 rounded-full">
-                                  🕗 f.h. sin recargo
-                                </span>
+                              {esFuera && (stObj?.recargoFuera?.activo && stObj.recargoFuera.monto > 0
+                                ? <span className="text-xs font-bold bg-green-100 text-green-700 border border-green-300 px-2 py-0.5 rounded-full">
+                                    ✓ f.h. {fmtM(stObj.recargoFuera.monto)}
+                                  </span>
+                                : <span className="text-xs font-bold bg-teal/10 text-teal border border-teal/30 px-2 py-0.5 rounded-full">
+                                    🕗 f.h. sin recargo
+                                  </span>
                               )}
                             </>
                           )
