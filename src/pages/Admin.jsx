@@ -5,6 +5,7 @@ import { PrivateCalendar } from '../components/calendar/PrivateCalendar'
 import { TokenRefreshBanner } from '../components/ui/TokenRefreshBanner'
 import { PatientManager } from '../components/admin/PatientManager'
 import { ServiceTypeManager } from '../components/admin/ServiceTypeManager'
+import { BulkAttendance } from '../components/admin/BulkAttendance'
 import { getServiceTypes } from '../hooks/useFirestore'
 import { setDynamicTypeMap } from '../lib/parseEvent'
 
@@ -24,6 +25,7 @@ export default function Admin() {
   // Tipos detectados desde pacientes (callback de PatientManager)
   const [detectedTypes, setDetectedTypes]     = useState([])  // ['Terapia','Test',...]
   const [patientTypeCount, setPatientTypeCount] = useState({}) // {'Terapia': 2, 'Test': 1}
+  const [patients, setPatients]               = useState([])  // lista para BulkAttendance
 
   const reloadServiceTypes = useCallback(async () => {
     try {
@@ -56,6 +58,10 @@ export default function Admin() {
   const handleTypesDetected = useCallback((types, countMap) => {
     setDetectedTypes(types)
     setPatientTypeCount(countMap)
+  }, [])
+
+  const handlePatientsLoaded = useCallback((list) => {
+    setPatients(list)
   }, [])
 
   return (
@@ -94,6 +100,13 @@ export default function Admin() {
           serviceTypes={serviceTypes}
           knownTypeNames={knownDisplayNames}
           onTypesDetected={handleTypesDetected}
+          onPatientsLoaded={handlePatientsLoaded}
+        />
+
+        <BulkAttendance
+          accessToken={accessToken}
+          serviceTypes={serviceTypes}
+          patients={patients}
         />
 
         <div className="flex flex-wrap items-center gap-3 mb-6">

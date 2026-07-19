@@ -1,27 +1,12 @@
 import { useState } from 'react'
 import { saveServiceType, deleteServiceType } from '../../hooks/useFirestore'
+import { COLORS as COLOR_MAP, COLOR_NAMES, colorVariant } from '../../lib/colorMaps'
 
-const COLOR_CLASSES = {
-  teal:   'bg-teal/10 text-teal border-teal/30',
-  purple: 'bg-purple/10 text-purple border-purple/30',
-  orange: 'bg-orange/10 text-orange border-orange/30',
-  blue:   'bg-blue-100 text-blue-600 border-blue-200',
-  pink:   'bg-pink-100 text-pink-600 border-pink-200',
-  green:  'bg-green-100 text-green-700 border-green-200',
-  gray:   'bg-gray-100 text-gray-500 border-gray-200',
-}
+// Para compatibilidad con el selector de colores — usa colorMaps como fuente
+const COLOR_CLASSES = Object.fromEntries(COLOR_NAMES.map((c) => [c, colorVariant(c, 'badge')]))
+const COLOR_DOT     = Object.fromEntries(COLOR_NAMES.map((c) => [c, colorVariant(c, 'dot')]))
 
-const COLOR_DOT = {
-  teal:   'bg-teal',
-  purple: 'bg-purple',
-  orange: 'bg-orange',
-  blue:   'bg-blue-500',
-  pink:   'bg-pink-400',
-  green:  'bg-green-500',
-  gray:   'bg-gray-400',
-}
-
-const COLORS = Object.keys(COLOR_CLASSES)
+const COLORS = COLOR_NAMES
 
 function slugify(s) {
   return s.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '')

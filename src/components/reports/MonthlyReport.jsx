@@ -6,6 +6,7 @@ import { getPrivateEvents } from '../../lib/googleCalendar'
 import { getSessionsInRange, getAllPatients, getServiceTypes } from '../../hooks/useFirestore'
 import { parseEvent } from '../../lib/parseEvent'
 import { LoadingSpinner } from '../ui/LoadingSpinner'
+import { colorVariant, COLORS } from '../../lib/colorMaps'
 
 // ── Datos profesionales para membrete PDF ─────────────────────────────────────
 const PROF_INFO = {
@@ -14,36 +15,6 @@ const PROF_INFO = {
   university: 'Universidad de Chile',
   email:      'valentinapauroca0@gmail.com',
   phone:      '+56 9 6227 5500',
-}
-
-// ── Mapas estáticos para Tailwind (deben ser literales) ───────────────────────
-const COLOR_TEXT = {
-  teal:   'text-teal font-bold',
-  purple: 'text-purple font-bold',
-  orange: 'text-orange font-bold',
-  blue:   'text-blue-600 font-bold',
-  pink:   'text-pink-500 font-bold',
-  green:  'text-green-600 font-bold',
-  gray:   'text-gray-500 font-bold',
-}
-const COLOR_BAR = {
-  teal:   'bg-teal',
-  purple: 'bg-purple',
-  orange: 'bg-orange',
-  blue:   'bg-blue-400',
-  pink:   'bg-pink-400',
-  green:  'bg-green-500',
-  gray:   'bg-gray-300',
-}
-// RGB para jsPDF (sin CSS)
-const PDF_RGB = {
-  teal:   [20, 184, 166],
-  purple: [124, 58, 237],
-  orange: [249, 115, 22],
-  blue:   [59, 130, 246],
-  pink:   [236, 72, 153],
-  green:  [34, 197, 94],
-  gray:   [156, 163, 175],
 }
 
 // ── Helpers de formato ────────────────────────────────────────────────────────
@@ -64,12 +35,12 @@ function formatHours(h) {
   return `${h.toFixed(1)} h`
 }
 
-// ── Helpers dinámicos desde serviceTypes ──────────────────────────────────────
+// ── Helpers dinámicos desde serviceTypes (usa colorMaps centralizado) ─────────
 function makeHelpers(serviceTypes) {
   const colorOf  = (name) => serviceTypes.find((s) => s.displayName === name)?.color ?? 'gray'
-  const textOf   = (name) => COLOR_TEXT[colorOf(name)]  ?? COLOR_TEXT.gray
-  const barOf    = (name) => COLOR_BAR[colorOf(name)]   ?? COLOR_BAR.gray
-  const pdfOf    = (name) => PDF_RGB[colorOf(name)]     ?? PDF_RGB.gray
+  const textOf   = (name) => colorVariant(colorOf(name), 'text')
+  const barOf    = (name) => colorVariant(colorOf(name), 'bar')
+  const pdfOf    = (name) => colorVariant(colorOf(name), 'rgb')
   const precioOf = (name) => serviceTypes.find((s) => s.displayName === name)?.precioHora ?? 0
   const shortOf  = (name) => {
     const st = serviceTypes.find((s) => s.displayName === name)

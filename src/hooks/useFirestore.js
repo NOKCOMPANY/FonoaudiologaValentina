@@ -136,6 +136,12 @@ export async function updatePatientInfo(patientId, { fullName, description, name
   )
 }
 
+export async function getSessionsByPatient(patientId) {
+  const q    = query(collection(db, 'sessions'), where('patientId', '==', patientId))
+  const snap = await withTimeout(getDocs(q), 15000, 'obtener sesiones del paciente')
+  return snap.docs.map((d) => ({ id: d.id, ...d.data() }))
+}
+
 // ── Tipos de servicio ─────────────────────────────────────────────────────────
 
 const DEFAULT_SERVICE_TYPES = [

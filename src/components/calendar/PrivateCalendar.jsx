@@ -4,6 +4,7 @@ import { useAuth } from '../../context/AuthContext'
 import { LoadingSpinner } from '../ui/LoadingSpinner'
 import { parseEvent } from '../../lib/parseEvent'
 import { markAttendanceWithPatient, getSessionsInRange, updateSessionType } from '../../hooks/useFirestore'
+import { colorVariant } from '../../lib/colorMaps'
 
 function toLocalDateStr(d) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
@@ -14,37 +15,18 @@ function formatTime(dateStr) {
   return new Date(dateStr).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' })
 }
 
-// Mapas estáticos para que Tailwind incluya las clases en el build
-const COLOR_BADGE = {
-  teal:   'bg-teal/10 text-teal border-teal/30',
-  purple: 'bg-purple/10 text-purple border-purple/30',
-  orange: 'bg-orange/10 text-orange border-orange/30',
-  blue:   'bg-blue-100 text-blue-600 border-blue-200',
-  pink:   'bg-pink-100 text-pink-600 border-pink-200',
-  green:  'bg-green-100 text-green-700 border-green-200',
-  gray:   'bg-gray-100 text-gray-500 border-gray-200',
-}
-const COLOR_BORDER = {
-  teal:   'border-l-teal',
-  purple: 'border-l-purple',
-  orange: 'border-l-orange',
-  blue:   'border-l-blue-400',
-  pink:   'border-l-pink-400',
-  green:  'border-l-green-500',
-  gray:   'border-l-gray-300',
-}
-const DEFAULT_BADGE  = COLOR_BADGE.gray
-const DEFAULT_BORDER = COLOR_BORDER.gray
+const DEFAULT_BADGE  = colorVariant('gray', 'badge')
+const DEFAULT_BORDER = colorVariant('gray', 'border')
 
 function SessionCard({ event, existingSession, serviceTypes = [] }) {
   const parsed    = parseEvent(event.summary ?? '')
   // El tipo del documento Firestore tiene precedencia sobre el título del calendario
   const resolvedType = existingSession?.type || parsed.typeName
 
-  // Lookup dinámico de estilos según la regla del tipo de servicio
-  const stColor = (name) => serviceTypes.find((s) => s.displayName === name)?.color ?? 'gray'
-  const badgeOf  = (name) => COLOR_BADGE[stColor(name)]  ?? DEFAULT_BADGE
-  const borderOf = (name) => COLOR_BORDER[stColor(name)] ?? DEFAULT_BORDER
+  // Lookup dinámico de estilos desde colorMaps centralizado
+  const stColor  = (name) => serviceTypes.find((s) => s.displayName === name)?.color ?? 'gray'
+  const badgeOf  = (name) => colorVariant(stColor(name), 'badge')
+  const borderOf = (name) => colorVariant(stColor(name), 'border')
 
   const [status, setStatus]           = useState(null)
   const [saving, setSaving]           = useState(false)

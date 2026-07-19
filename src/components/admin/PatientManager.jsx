@@ -2,26 +2,7 @@ import { useState, useEffect, useRef } from 'react'
 import { getAllPatients, updatePatientInfo, mergePatients, deletePatient, getSessionsInRange } from '../../hooks/useFirestore'
 import { getPrivateEvents } from '../../lib/googleCalendar'
 import { parseEvent } from '../../lib/parseEvent'
-
-const COLOR_BADGE = {
-  teal:   'bg-teal/10 text-teal border-teal/30',
-  purple: 'bg-purple/10 text-purple border-purple/30',
-  orange: 'bg-orange/10 text-orange border-orange/30',
-  blue:   'bg-blue-100 text-blue-600 border-blue-200',
-  pink:   'bg-pink-100 text-pink-600 border-pink-200',
-  green:  'bg-green-100 text-green-700 border-green-200',
-  gray:   'bg-gray-100 text-gray-500 border-gray-200',
-}
-
-const COLOR_AVATAR = {
-  teal:   'bg-teal/15 border-teal/30 text-teal',
-  purple: 'bg-purple/15 border-purple/30 text-purple',
-  orange: 'bg-orange/15 border-orange/30 text-orange',
-  blue:   'bg-blue-100 border-blue-300 text-blue-600',
-  pink:   'bg-pink-100 border-pink-300 text-pink-500',
-  green:  'bg-green-100 border-green-300 text-green-600',
-  gray:   'bg-gray-100 border-gray-200 text-gray-500',
-}
+import { colorVariant } from '../../lib/colorMaps'
 
 function normalize(s) {
   return (s || '')
@@ -99,19 +80,20 @@ function PatientCard({ p, sessionTypes, serviceTypes, knownTypeNames, edits, set
     ? types.filter((t) => !knownTypeNames.has(t))
     : []
 
-  // Lookup dinámico de color desde serviceTypes
+  // Lookup dinámico de color desde serviceTypes (usa colorMaps centralizado)
   const colorOf = (typeName) => {
     const st = serviceTypes.find((s) => s.displayName === typeName)
-    return COLOR_BADGE[st?.color] ?? COLOR_BADGE.gray
+    return colorVariant(st?.color, 'badge')
   }
 
   const initials = displayName.split(' ').slice(0, 2).map((w) => w[0]?.toUpperCase() ?? '').join('')
 
   // Avatar color: primer tipo conocido determina el color
-  const firstKnown = types.find((t) => serviceTypes.some((s) => s.displayName === t))
-  const avatarColor = firstKnown
-    ? (COLOR_AVATAR[serviceTypes.find((s) => s.displayName === firstKnown)?.color] ?? COLOR_AVATAR.gray)
-    : COLOR_AVATAR.gray
+  const firstKnown  = types.find((t) => serviceTypes.some((s) => s.displayName === t))
+  const avatarColor = colorVariant(
+    serviceTypes.find((s) => s.displayName === firstKnown)?.color,
+    'avatar'
+  )
 
   return (
     <div className={`rounded-2xl border overflow-hidden transition-shadow ${
@@ -230,7 +212,7 @@ function MergePanel({ group, onMerge, onCancel, merging }) {
 }
 
 // ── Componente principal ───────────────────────────────────────────────────────
-export function PatientManager({ accessToken, serviceTypes = [], knownTypeNames, onTypesDetected }) {
+export function PatientManager({ accessToken, serviceTypes = [], knownTypeNames, onTypesDetected, onPatientsLoaded }) {
   const [openFormat, setOpenFormat]     = useState(false)
   const [openPatients, setOpenPatients] = useState(false)
 
@@ -294,6 +276,7 @@ export function PatientManager({ accessToken, serviceTypes = [], knownTypeNames,
       setSessionTypes(resolved)
 
       setPatients(list)
+      if (onPatientsLoaded) onPatientsLoaded(list)
       const initial = {}
       list.forEach((p) => { initial[p.id] = { fullName: p.fullName ?? '', description: p.description ?? '' } })
       setEdits(initial)
