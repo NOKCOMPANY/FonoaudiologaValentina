@@ -238,7 +238,7 @@ async function exportPatientPDF(row, reportName, recargoRules) {
   doc.line(14, y + 1, 196, y + 1)
   y += 7
 
-  // ── Resumen por tipo de servicio ─────────────────────────────────────────
+  // ── Resumen por tipo de servicio — tabla principal con marco y blur ───────
   const typeEntries = Object.entries(row.typeCounts).filter(([, tc]) => tc.total > 0)
 
   // Título encima del marco
@@ -250,8 +250,20 @@ async function exportPatientPDF(row, reportName, recargoRules) {
   doc.text('Resumen por tipo de servicio', 21, y + 4)
   y += 9
 
-  // Tabla — guardamos el startY para dibujar el marco redondeado encima después
+  // Estimación de altura para dibujar blur + fondo ANTES de la tabla
+  const estH        = 10 + (typeEntries.length + 1) * 8.5 + 6
   const tableStartY = y
+  const FRAME_BG    = [242, 235, 255]  // lavanda media — fondo del marco
+
+  // Blur: una sola capa exterior muy suave
+  doc.setFillColor(232, 220, 255)
+  doc.roundedRect(11, y - 2, 188, estH + 4, 6, 6, 'F')
+
+  // Fondo del marco — la tabla se dibujará encima con margen lateral de 3mm
+  // → las esquinas redondeadas quedan expuestas naturalmente (sin cuadrados blancos)
+  doc.setFillColor(...FRAME_BG)
+  doc.roundedRect(14, y, 182, estH, 4, 4, 'F')
+
   const serviceRows = typeEntries.map(([type, tc]) => [
     type,
     tc.total,
@@ -267,55 +279,45 @@ async function exportPatientPDF(row, reportName, recargoRules) {
     row.montoTotal > 0 ? formatCLP(row.montoTotal) : '—',
   ])
 
+  // Tabla con margen lateral de 3mm → deja ver el fondo del marco en las esquinas
   autoTable(doc, {
     startY: tableStartY,
+    margin: { left: 17, right: 17 },
     head: [['Servicio', 'Agendadas', 'Completadas', 'No efectuadas', 'Monto Bruto']],
     body: serviceRows,
     headStyles: {
-      fillColor: [180, 150, 232],
+      fillColor: [109, 40, 217],   // purple-700 — más oscuro (tabla principal)
       fontStyle: 'bold', fontSize: 9,
       textColor: [255, 255, 255],
     },
-    alternateRowStyles: { fillColor: [252, 249, 255] },
+    alternateRowStyles: { fillColor: [234, 224, 255] },
     styles: {
       fontSize: 9, cellPadding: 4,
-      textColor: [55, 35, 80],
-      fillColor: [255, 255, 255],
-      lineColor: [225, 210, 245],
+      textColor: [45, 20, 75],
+      fillColor: FRAME_BG,         // mismo color que el fondo del marco → esquinas seamless
+      lineColor: [210, 193, 242],
       lineWidth: 0.2,
     },
     columnStyles: {
       1: { halign: 'center' },
       2: { halign: 'center', textColor: [22, 163, 74] },
-      3: { halign: 'center', textColor: [180, 40, 40] },
+      3: { halign: 'center', textColor: [165, 35, 35] },
       4: { halign: 'right', fontStyle: 'bold' },
     },
     didParseCell: (data) => {
       if (data.section === 'body' && data.row.index === serviceRows.length - 1) {
         data.cell.styles.fontStyle = 'bold'
-        data.cell.styles.fillColor = [232, 220, 255]
-        data.cell.styles.textColor = [65, 20, 150]
+        data.cell.styles.fillColor = [88, 28, 180]   // morado oscuro total
+        data.cell.styles.textColor = [255, 255, 255]
       }
     },
   })
 
-  // Marco redondeado dibujado sobre la tabla — solo borde, sin relleno
-  // cubre las esquinas rectangulares de la tabla con el color de fondo
+  // Marco redondeado al tamaño real de la tabla — sin cuadrados blancos
   const tableEndY = doc.lastAutoTable.finalY
-  const frameH    = tableEndY - tableStartY
-  const r         = 3
-  const pageW     = doc.internal.pageSize.getWidth()
-  const bgColor   = [255, 255, 255]
-  // Esquinas — pequeños cuadrados del color de fondo para tapar las esquinas rectas
-  doc.setFillColor(...bgColor)
-  doc.rect(14, tableStartY, r, r, 'F')
-  doc.rect(pageW - 14 - r, tableStartY, r, r, 'F')
-  doc.rect(14, tableEndY - r, r, r, 'F')
-  doc.rect(pageW - 14 - r, tableEndY - r, r, r, 'F')
-  // Borde redondeado encima
-  doc.setDrawColor(185, 158, 232)
+  doc.setDrawColor(145, 100, 218)
   doc.setLineWidth(0.7)
-  doc.roundedRect(14, tableStartY, 182, frameH, r, r, 'D')
+  doc.roundedRect(14, tableStartY, 182, tableEndY - tableStartY, 4, 4, 'D')
 
   y = tableEndY + 8
 
@@ -420,11 +422,20 @@ async function exportPatientPDF(row, reportName, recargoRules) {
       startY: y,
       head: [['Fecha', 'Horario', 'Tipo', 'Estado', 'Monto']],
       body: allRows,
-      headStyles: { fillColor: purpleL, fontStyle: 'bold', fontSize: 9, textColor: [255, 255, 255] },
+      headStyles: {
+        fillColor: [195, 175, 240],   // header pálido — tabla secundaria
+        fontStyle: 'bold', fontSize: 9,
+        textColor: [55, 20, 110],
+      },
       alternateRowStyles: {},
-      styles: { fontSize: 8.5, cellPadding: 2.8, textColor: [50, 30, 70] },
+      styles: {
+        fontSize: 8.5, cellPadding: 2.8,
+        textColor: [70, 50, 90],
+        lineColor: [230, 220, 248],
+        lineWidth: 0.15,
+      },
       columnStyles: {
-        0: { cellWidth: 40, fontStyle: 'bold', textColor: [80, 40, 120] },
+        0: { cellWidth: 40, fontStyle: 'bold', textColor: [100, 70, 140] },
         1: { cellWidth: 27 },
         2: { cellWidth: 28 },
         3: { cellWidth: 51 },
@@ -434,9 +445,9 @@ async function exportPatientPDF(row, reportName, recargoRules) {
         if (data.section !== 'body') return
         const idx = data.row.index
         if (subtotalRowIdxs.includes(idx)) {
-          data.cell.styles.fillColor = [235, 228, 255]
+          data.cell.styles.fillColor = [238, 230, 255]
           data.cell.styles.fontStyle = 'bold'
-          data.cell.styles.textColor = [80, 40, 160]
+          data.cell.styles.textColor = [90, 50, 165]
         } else if (dayHeaderIdxs.includes(idx)) {
           data.cell.styles.fillColor = [249, 246, 255]
         }
