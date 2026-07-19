@@ -4,15 +4,26 @@ import { WavyBorder } from '../ui/WavyBorder'
 export function Hero() {
   return (
     <section className="relative bg-cream overflow-hidden pt-12 pb-0">
-      {/* Decorative blobs */}
-      <div className="absolute top-8 left-4 w-20 h-20 bg-pink/20 rounded-full blur-xl" />
-      <div className="absolute top-16 right-6 w-28 h-28 bg-teal/20 rounded-full blur-xl" />
-      <div className="absolute bottom-16 left-8 w-16 h-16 bg-orange/20 rounded-full blur-xl" />
+      {/* Decorative blobs — flotantes */}
+      <div
+        className="absolute top-8 left-4 w-20 h-20 bg-pink/20 rounded-full blur-xl animate-float"
+        style={{ animationDelay: '0s' }}
+      />
+      <div
+        className="absolute top-16 right-6 w-28 h-28 bg-teal/20 rounded-full blur-xl animate-float-slow"
+        style={{ animationDelay: '2s' }}
+      />
+      <div
+        className="absolute bottom-16 left-8 w-16 h-16 bg-orange/20 rounded-full blur-xl animate-float-slower"
+        style={{ animationDelay: '4s' }}
+      />
 
       <div className="relative max-w-5xl mx-auto px-6 flex flex-col md:flex-row items-center gap-10">
         {/* Text */}
-        <div className="flex-1 text-center md:text-left">
-          {/* Handprint decoration */}
+        <div
+          className="flex-1 text-center md:text-left animate-fade-up"
+          style={{ animationDelay: '0.1s' }}
+        >
           <span className="text-4xl select-none">🖐️</span>
           <h1 className="font-heading text-5xl md:text-6xl text-purple leading-tight mt-2">
             ¡Hola! Soy<br />Valentina
@@ -30,7 +41,7 @@ export function Hero() {
               href="https://wa.me/56962275500"
               target="_blank"
               rel="noopener noreferrer"
-              className="bg-green-500 hover:bg-green-600 text-white font-bold py-3 px-7 rounded-full shadow-lg transition-transform hover:scale-105 flex items-center justify-center gap-2"
+              className="bg-green-500 hover:bg-green-600 text-white font-bold py-3 px-7 rounded-full shadow-lg transition-transform hover:scale-105 flex items-center justify-center gap-2 animate-pulse-soft"
             >
               <span>💬</span> WhatsApp
             </a>
@@ -48,7 +59,10 @@ export function Hero() {
         </div>
 
         {/* Foto Valentina */}
-        <div className="flex-shrink-0 flex flex-col items-center">
+        <div
+          className="flex-shrink-0 flex flex-col items-center animate-fade-up"
+          style={{ animationDelay: '0.25s' }}
+        >
           <div className="relative">
             <div className="absolute inset-0 rounded-full bg-gradient-to-br from-purple/40 to-pink/40 scale-110 blur-md" />
             <img

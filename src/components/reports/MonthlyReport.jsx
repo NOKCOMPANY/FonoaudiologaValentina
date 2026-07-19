@@ -10,10 +10,10 @@ import { LoadingSpinner } from '../ui/LoadingSpinner'
 
 const STEPS = ['Obteniendo calendario', 'Obteniendo asistencias', 'Procesando reporte']
 
-const TYPE_BADGE = {
-  Taller:     'bg-orange/10 text-orange border-orange/30',
-  Babysitter: 'bg-teal/10 text-teal border-teal/30',
-  Terapia:    'bg-purple/10 text-purple border-purple/30',
+const TYPE_COLOR = {
+  Babysitter: 'text-teal font-bold',
+  Terapia:    'text-purple font-bold',
+  Taller:     'text-orange font-bold',
 }
 
 function getMonthRange(year, month) {
@@ -40,11 +40,13 @@ function buildUniqueRows(events, sessionMap, patientMap) {
     const parsed  = parseEvent(ev.summary ?? '')
     const sess    = sessionMap[ev.id]
     const pid     = parsed.patientId || sess?.patientId || 'sin-registrar'
-    const type    = parsed.typeName || 'Sin clasificar'
+    // El tipo del documento Firestore tiene precedencia sobre el título del calendario
+    const type    = sess?.type || parsed.typeName || 'Sin clasificar'
     const name    = parsed.patientName || patientMap[pid]?.name || ev.summary || 'Sin registrar'
+    const fullName = patientMap[pid]?.fullName || null
 
     if (!byPatient[pid]) {
-      byPatient[pid] = { patientName: name, types: new Set(), total: 0, attended: 0, absent: 0, typeCounts: emptyTypeCounts() }
+      byPatient[pid] = { patientName: name, fullName, types: new Set(), total: 0, attended: 0, absent: 0, typeCounts: emptyTypeCounts() }
     }
     byPatient[pid].types.add(type)
     byPatient[pid].total++
@@ -62,7 +64,7 @@ function buildUniqueRows(events, sessionMap, patientMap) {
   })
 
   return Object.values(byPatient).map((r) => ({
-    patientName: r.patientName,
+    patientName: r.fullName || r.patientName,
     types: [...r.types],
     total: r.total,
     attended: r.attended,
@@ -77,7 +79,7 @@ function exportPatientCSV(row) {
   SERVICE_KEYS.forEach((key) => {
     const tc = row.typeCounts?.[key]
     if (tc && tc.total > 0) {
-      lines.push(`"${displayType(key)} fonoaudiológico",${tc.total},${tc.attended},${tc.absent}`)
+      lines.push(`"${displayType(key)}",${tc.total},${tc.attended},${tc.absent}`)
     }
   })
   lines.push(`Total,${row.total},${row.attended},${row.absent}`)
@@ -203,50 +205,45 @@ function ReportTable({ report }) {
         <table className="w-full text-sm font-body">
           <thead className="bg-purple text-white">
             <tr>
-              {['Paciente', 'Servicios', 'Agendadas', 'Asistidas', 'Ausentes', '%', 'Descargar'].map((h) => (
-                <th key={h} className="py-3 px-4 text-left font-bold whitespace-nowrap">{h}</th>
+              {['', 'Paciente', 'Servicios', 'Agendadas', 'Asistidas', 'Ausentes', '%'].map((h, i) => (
+                <th key={i} className="py-3 px-3 text-left font-bold whitespace-nowrap">{h}</th>
               ))}
             </tr>
           </thead>
           <tbody>
             {uniqueRows.map((r, i) => (
               <tr key={i} className={i % 2 === 0 ? 'bg-white' : 'bg-cream'}>
-                <td className="py-3 px-4 font-bold text-gray-800 whitespace-nowrap">{r.patientName}</td>
-                <td className="py-3 px-4">
-                  <div className="flex gap-1 flex-wrap">
-                    {r.types.map((t) => (
-                      <span
-                        key={t}
-                        className={`text-xs font-bold px-2 py-0.5 rounded-full border ${TYPE_BADGE[t] ?? 'bg-gray-100 text-gray-500 border-gray-200'}`}
-                      >
-                        {displayType(t)}
-                      </span>
-                    ))}
-                  </div>
-                </td>
-                <td className="py-3 px-4 text-gray-600 text-center">{r.total}</td>
-                <td className="py-3 px-4 text-green-600 font-bold text-center">{r.attended}</td>
-                <td className="py-3 px-4 text-red-500 font-bold text-center">{r.absent}</td>
-                <td className="py-3 px-4 text-center">
-                  <span className={`font-bold ${r.pct >= 80 ? 'text-green-600' : 'text-orange'}`}>
-                    {r.pct}%
-                  </span>
-                </td>
-                <td className="py-3 px-4 text-center whitespace-nowrap">
+                {/* Botones al inicio */}
+                <td className="py-2 px-3 whitespace-nowrap">
                   <button
                     onClick={() => exportPatientCSV(r)}
                     className="bg-teal/10 hover:bg-teal/20 text-teal border border-teal/30 text-xs font-bold px-2 py-1 rounded-full transition mr-1"
                     title="CSV de este paciente"
-                  >
-                    CSV
-                  </button>
+                  >CSV</button>
                   <button
                     onClick={() => exportPatientPDF(r)}
                     className="bg-purple/10 hover:bg-purple/20 text-purple border border-purple/30 text-xs font-bold px-2 py-1 rounded-full transition"
                     title="PDF de este paciente"
-                  >
-                    PDF
-                  </button>
+                  >PDF</button>
+                </td>
+                <td className="py-3 px-3 font-bold text-gray-800 whitespace-nowrap">{r.patientName}</td>
+                {/* Servicios con conteos */}
+                <td className="py-3 px-3">
+                  <div className="flex flex-col gap-0.5">
+                    {SERVICE_KEYS.filter((k) => r.typeCounts?.[k]?.total > 0).map((k) => (
+                      <span key={k} className={`text-xs ${TYPE_COLOR[k] ?? 'text-gray-500'}`}>
+                        {displayType(k)}: {r.typeCounts[k].total}
+                      </span>
+                    ))}
+                  </div>
+                </td>
+                <td className="py-3 px-3 text-gray-600 text-center">{r.total}</td>
+                <td className="py-3 px-3 text-green-600 font-bold text-center">{r.attended}</td>
+                <td className="py-3 px-3 text-red-500 font-bold text-center">{r.absent}</td>
+                <td className="py-3 px-3 text-center">
+                  <span className={`font-bold ${r.pct >= 80 ? 'text-green-600' : 'text-orange'}`}>
+                    {r.pct}%
+                  </span>
                 </td>
               </tr>
             ))}
@@ -256,22 +253,16 @@ function ReportTable({ report }) {
 
       <div className="flex gap-2 flex-wrap">
         <button
-          onClick={() => exportCSV(uniqueRows, displayName)}
+          onClick={() => exportFullCSV(uniqueRows, displayName)}
           className="bg-teal hover:bg-teal/80 text-white font-bold py-2.5 px-5 rounded-full transition text-sm"
         >
-          📥 Exportar CSV
+          📥 CSV general
         </button>
         <button
           onClick={() => exportPDF(uniqueRows, displayName)}
           className="bg-purple hover:bg-purple/80 text-white font-bold py-2.5 px-5 rounded-full transition text-sm"
         >
-          📄 Exportar PDF
-        </button>
-        <button
-          onClick={() => exportFullCSV(uniqueRows, displayName)}
-          className="bg-orange hover:bg-orange/80 text-white font-bold py-2.5 px-5 rounded-full transition text-sm"
-        >
-          📊 CSV completo (todos los pacientes)
+          📄 PDF
         </button>
       </div>
     </div>
@@ -423,8 +414,11 @@ export function MonthlyReport() {
       )}
 
       {pendingReport && !isGenerating && (
-        <div className="mb-8 bg-white rounded-2xl border border-purple/20 p-4 shadow-sm">
-          <h3 className="font-heading text-xl text-purple mb-1">Vista previa — {pendingReport.name}</h3>
+        <div className="mb-8 bg-teal/5 rounded-2xl border border-teal/40 p-4 shadow-sm">
+          <div className="flex items-center gap-2 mb-1">
+            <span className="text-xs font-bold text-teal bg-teal/10 border border-teal/30 px-2 py-0.5 rounded-full">📝 Sin guardar</span>
+            <h3 className="font-heading text-xl text-teal">{pendingReport.name}</h3>
+          </div>
           <p className="text-xs text-gray-400 mb-4">{pendingReport.uniqueRows?.length ?? 0} paciente(s)</p>
           <ReportTable report={pendingReport} />
 

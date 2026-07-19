@@ -3,7 +3,7 @@ import { usePrivateEvents } from '../../hooks/useCalendar'
 import { useAuth } from '../../context/AuthContext'
 import { LoadingSpinner } from '../ui/LoadingSpinner'
 import { parseEvent } from '../../lib/parseEvent'
-import { markAttendanceWithPatient, getSessionsInRange } from '../../hooks/useFirestore'
+import { markAttendanceWithPatient, getSessionsInRange, updateSessionType } from '../../hooks/useFirestore'
 import { TYPE_LABEL } from '../../lib/constants'
 
 function toLocalDateStr(d) {
@@ -22,23 +22,35 @@ const TYPE_STYLES = {
 }
 const DEFAULT_STYLE = { badge: 'bg-gray-100 text-gray-500 border-gray-200', border: 'border-l-gray-300' }
 
+const TYPE_OPTIONS = ['Babysitter', 'Terapia', 'Taller']
+
 function SessionCard({ event, existingSession }) {
   const parsed    = parseEvent(event.summary ?? '')
-  const styles    = TYPE_STYLES[parsed.typeName] ?? DEFAULT_STYLE
-  const typeLabel = TYPE_LABEL[parsed.typeName] ?? parsed.typeName
+  // El tipo del documento Firestore tiene precedencia sobre el título del calendario
+  const resolvedType = existingSession?.type || parsed.typeName
+  const styles    = TYPE_STYLES[resolvedType] ?? DEFAULT_STYLE
+  const typeLabel = TYPE_LABEL[resolvedType] ?? resolvedType
 
-  const [status, setStatus]       = useState(null)
-  const [saving, setSaving]       = useState(false)
-  const [saved, setSaved]         = useState(false)
-  const [error, setError]         = useState(null)
-  const [notes, setNotes]         = useState('')
-  const [showNotes, setShowNotes] = useState(false)
+  const [status, setStatus]           = useState(null)
+  const [saving, setSaving]           = useState(false)
+  const [saved, setSaved]             = useState(false)
+  const [editing, setEditing]         = useState(false)
+  const [error, setError]             = useState(null)
+  const [notes, setNotes]             = useState('')
+  const [showNotes, setShowNotes]     = useState(false)
+
+  // Reclasificación
+  const [showRetype, setShowRetype]   = useState(false)
+  const [pendingType, setPendingType] = useState(null)
+  const [retyping, setRetyping]       = useState(false)
+  const [currentType, setCurrentType] = useState(resolvedType)
 
   useEffect(() => {
     if (existingSession) {
       setStatus(existingSession.attended ? 'attended' : 'absent')
       setSaved(true)
       setNotes(existingSession.notes ?? '')
+      setCurrentType(existingSession.type || parsed.typeName)
     }
   }, [existingSession])
 
@@ -47,9 +59,10 @@ function SessionCard({ event, existingSession }) {
     setSaving(true)
     setError(null)
     try {
-      await markAttendanceWithPatient(event.id, parsed.patientId, parsed.patientName, attended, notes, parsed.typeName)
+      await markAttendanceWithPatient(event.id, parsed.patientId, parsed.patientName, attended, notes, currentType)
       setStatus(attended ? 'attended' : 'absent')
       setSaved(true)
+      setEditing(false)
     } catch (e) {
       setError(`[${e.code ?? 'error'}] ${e.message ?? 'Error al guardar'}`)
     } finally {
@@ -57,40 +70,72 @@ function SessionCard({ event, existingSession }) {
     }
   }
 
-  const retry = () => {
-    setError(null)
-    setSaving(false)
+  const confirmRetype = async () => {
+    if (!pendingType || retyping) return
+    setRetyping(true)
+    try {
+      await updateSessionType(event.id, pendingType)
+      setCurrentType(pendingType)
+      setShowRetype(false)
+      setPendingType(null)
+    } catch (e) {
+      setError(`[${e.code ?? 'error'}] ${e.message ?? 'Error al reclasificar'}`)
+    } finally {
+      setRetyping(false)
+    }
   }
 
+  const currentStyles = TYPE_STYLES[currentType] ?? DEFAULT_STYLE
+  const currentLabel  = TYPE_LABEL[currentType] ?? currentType
+
   return (
-    <div className={`bg-white rounded-2xl shadow-sm border-l-4 ${styles.border} overflow-hidden`}>
+    <div className={`bg-white rounded-2xl shadow-sm border-l-4 ${currentStyles.border} overflow-hidden`}>
       <div className="p-4 flex items-center gap-3">
         <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 mb-0.5">
-            <span className={`text-xs font-bold px-2 py-0.5 rounded-full border ${styles.badge}`}>
-              {typeLabel}
+          <div className="flex items-center gap-2 mb-0.5 flex-wrap">
+            <span className={`text-xs font-bold px-2 py-0.5 rounded-full border ${currentStyles.badge}`}>
+              {currentLabel}
             </span>
             <span className="text-xs text-gray-400">
               {formatTime(event.start?.dateTime)} – {formatTime(event.end?.dateTime)}
             </span>
+            {/* Botón reclasificar — solo si ya está guardado */}
+            {saved && (
+              <button
+                onClick={() => { setShowRetype((v) => !v); setPendingType(null) }}
+                className="text-gray-300 hover:text-purple text-xs transition"
+                title="Cambiar tipo de servicio"
+              >
+                🏷️
+              </button>
+            )}
           </div>
           <p className="font-bold text-gray-800 truncate">
             {parsed.patientName || event.summary || 'Sin título'}
           </p>
           <p className="text-xs mt-0.5">
             {parsed.typeName !== 'Sin clasificar'
-              ? <span className="text-gray-400">{typeLabel} · {parsed.patientName}</span>
+              ? <span className="text-gray-400">{currentLabel} · {parsed.patientName}</span>
               : <span className="text-orange font-medium">⚠ Sin clasificar — renombrar (ej: "BS Nombre")</span>
             }
           </p>
         </div>
 
-        {saved ? (
-          <span className={`text-sm font-bold px-3 py-1 rounded-full flex-shrink-0 ${
-            status === 'attended' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-600'
-          }`}>
-            {status === 'attended' ? '✅ Asistió' : '❌ No asistió'}
-          </span>
+        {saved && !editing ? (
+          <div className="flex items-center gap-2 flex-shrink-0">
+            <span className={`text-sm font-bold px-3 py-1 rounded-full ${
+              status === 'attended' ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-600'
+            }`}>
+              {status === 'attended' ? '✅ Asistió' : '❌ No asistió'}
+            </span>
+            <button
+              onClick={() => setEditing(true)}
+              className="text-xs bg-gray-100 hover:bg-gray-200 text-gray-500 px-2 py-1 rounded-full transition"
+              title="Editar asistencia"
+            >
+              ✏️
+            </button>
+          </div>
         ) : (
           <div className="flex items-center gap-2 flex-shrink-0">
             <button
@@ -107,17 +152,28 @@ function SessionCard({ event, existingSession }) {
             >
               {saving ? '⏳' : '❌'}
             </button>
-            <button
-              onClick={() => setShowNotes((v) => !v)}
-              className="text-gray-400 hover:text-gray-600 text-xs px-2 py-2 rounded-full transition"
-              title="Agregar nota"
-            >
-              📝
-            </button>
+            {!editing && (
+              <button
+                onClick={() => setShowNotes((v) => !v)}
+                className="text-gray-400 hover:text-gray-600 text-xs px-2 py-2 rounded-full transition"
+                title="Agregar nota"
+              >
+                📝
+              </button>
+            )}
+            {editing && (
+              <button
+                onClick={() => setEditing(false)}
+                className="text-xs text-gray-400 hover:text-gray-600 px-2 py-1 rounded-full transition"
+              >
+                Cancelar
+              </button>
+            )}
           </div>
         )}
       </div>
 
+      {/* Panel de notas */}
       {showNotes && !saved && (
         <div className="px-4 pb-4 border-t border-gray-100 pt-3">
           <textarea
@@ -129,14 +185,45 @@ function SessionCard({ event, existingSession }) {
         </div>
       )}
 
+      {/* Panel de reclasificación */}
+      {showRetype && saved && (
+        <div className="px-4 pb-4 border-t border-orange/20 pt-3 bg-orange/5">
+          <p className="text-xs text-orange font-bold mb-2">⚠️ Cambiar tipo de servicio registrado</p>
+          <div className="flex gap-2 flex-wrap mb-2">
+            {TYPE_OPTIONS.map((t) => (
+              <button
+                key={t}
+                onClick={() => setPendingType(t)}
+                className={`text-xs font-bold px-3 py-1.5 rounded-full border transition ${
+                  pendingType === t
+                    ? 'bg-purple text-white border-purple'
+                    : 'bg-white text-gray-600 border-gray-200 hover:border-purple/40'
+                }`}
+              >
+                {TYPE_LABEL[t] ?? t}
+              </button>
+            ))}
+          </div>
+          {pendingType && (
+            <button
+              onClick={confirmRetype}
+              disabled={retyping}
+              className="text-xs bg-orange hover:bg-orange/80 disabled:opacity-40 text-white font-bold px-4 py-1.5 rounded-full transition"
+            >
+              {retyping ? 'Guardando...' : `Confirmar → ${TYPE_LABEL[pendingType] ?? pendingType}`}
+            </button>
+          )}
+        </div>
+      )}
+
       {error && (
         <div className="px-4 pb-3 flex items-start gap-2">
           <p className="flex-1 text-red-500 text-xs bg-red-50 rounded-lg px-3 py-2 font-mono">{error}</p>
           <button
-            onClick={retry}
+            onClick={() => setError(null)}
             className="flex-shrink-0 text-xs bg-red-100 hover:bg-red-200 text-red-600 font-bold px-3 py-2 rounded-full transition"
           >
-            🔄 Reintentar
+            ✕
           </button>
         </div>
       )}

@@ -10,3 +10,8 @@ body {
 h1, h2, h3 {
   font-family: 'Fredoka One', cursive;
 }
+
+/* Animation delay utilities */
+.delay-150  { animation-delay: 0.15s; }
+.delay-300  { animation-delay: 0.30s; }
+.delay-500  { animation-delay: 0.50s; }

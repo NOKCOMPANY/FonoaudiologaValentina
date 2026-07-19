@@ -55,6 +55,22 @@ export async function saveReport(reportData) {
   return ref.id
 }
 
+export async function updateSessionType(calendarEventId, newType) {
+  requireAuth()
+  await withTimeout(
+    setDoc(doc(db, 'sessions', calendarEventId), { type: newType }, { merge: true }),
+    10000, 'actualizar tipo de sesión'
+  )
+}
+
+export async function updatePatientInfo(patientId, { fullName, description }) {
+  requireAuth()
+  await withTimeout(
+    setDoc(doc(db, 'patients', patientId), { fullName, description }, { merge: true }),
+    10000, 'actualizar paciente'
+  )
+}
+
 export async function getReports() {
   const snap = await withTimeout(getDocs(collection(db, 'reports')), 10000, 'cargar historial')
   return snap.docs

@@ -1,4 +1,5 @@
 import { WavyBorderTop } from '../ui/WavyBorder'
+import { useScrollReveal } from '../../lib/useScrollReveal'
 
 const services = [
   {
@@ -48,10 +49,16 @@ function PriceRow({ label, value }) {
   )
 }
 
-function ServiceCard({ service }) {
+function ServiceCard({ service, delay }) {
+  const [ref, visible] = useScrollReveal()
   return (
-    <div className={`${service.bg} rounded-3xl shadow-xl flex flex-col overflow-hidden`}>
-      {/* Foto de ejemplo */}
+    <div
+      ref={ref}
+      className={`${service.bg} rounded-3xl shadow-xl flex flex-col overflow-hidden transition-all duration-500 ${
+        visible ? 'animate-fade-up opacity-100' : 'opacity-0 translate-y-5'
+      }`}
+      style={{ animationDelay: delay }}
+    >
       <div className="relative h-44 overflow-hidden">
         <img
           src={`${import.meta.env.BASE_URL}images/${service.photo}`}
@@ -63,32 +70,28 @@ function ServiceCard({ service }) {
       </div>
 
       <div className="p-6 relative flex flex-col gap-4">
-      {/* Background decoration */}
-      <div className="absolute -top-6 -right-6 w-24 h-24 bg-white/10 rounded-full" />
-      <div className="absolute -bottom-4 -left-4 w-16 h-16 bg-white/10 rounded-full" />
+        <div className="absolute -top-6 -right-6 w-24 h-24 bg-white/10 rounded-full" />
+        <div className="absolute -bottom-4 -left-4 w-16 h-16 bg-white/10 rounded-full" />
 
-      <div className="relative">
-        <h3 className="font-heading text-white text-2xl">{service.title}</h3>
-        <p className="font-body text-white/90 text-sm mt-1 leading-relaxed">{service.description}</p>
+        <div className="relative">
+          <h3 className="font-heading text-white text-2xl">{service.title}</h3>
+          <p className="font-body text-white/90 text-sm mt-1 leading-relaxed">{service.description}</p>
+          <p className="font-body text-white/70 text-xs mt-3 italic">{service.ideal}</p>
 
-        <p className="font-body text-white/70 text-xs mt-3 italic">{service.ideal}</p>
+          <div className="flex flex-wrap gap-2 mt-3">
+            {service.badges.map((b) => (
+              <span key={b} className="bg-white/20 text-white text-xs font-bold px-3 py-1 rounded-full">
+                {b}
+              </span>
+            ))}
+          </div>
 
-        {/* Badges */}
-        <div className="flex flex-wrap gap-2 mt-3">
-          {service.badges.map((b) => (
-            <span key={b} className="bg-white/20 text-white text-xs font-bold px-3 py-1 rounded-full">
-              {b}
-            </span>
-          ))}
+          <div className="mt-4 bg-black/20 rounded-2xl p-4">
+            <p className="text-white/70 text-xs font-bold uppercase tracking-wide mb-2">Tarifa</p>
+            <PriceRow label="Lunes – Viernes" value={service.prices.weekday} />
+            <PriceRow label="Sábado – Domingo" value={service.prices.weekend} />
+          </div>
         </div>
-
-        {/* Price table */}
-        <div className="mt-4 bg-black/20 rounded-2xl p-4">
-          <p className="text-white/70 text-xs font-bold uppercase tracking-wide mb-2">Tarifa</p>
-          <PriceRow label="Lunes – Viernes" value={service.prices.weekday} />
-          <PriceRow label="Sábado – Domingo" value={service.prices.weekend} />
-        </div>
-      </div>
       </div>
     </div>
   )
@@ -106,8 +109,8 @@ export function Services() {
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          {services.map((s) => (
-            <ServiceCard key={s.title} service={s} />
+          {services.map((s, i) => (
+            <ServiceCard key={s.title} service={s} delay={`${i * 0.15}s`} />
           ))}
         </div>
 
