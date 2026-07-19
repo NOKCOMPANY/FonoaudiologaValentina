@@ -444,9 +444,9 @@ export function PatientManager({ accessToken, serviceTypes = [], knownTypeNames,
                 <p className="text-gray-500 font-mono">  0:30 h → precio ÷ 2  ·  1:00 h → precio  ·  1:30 h → precio × 1,5</p>
               </div>
               <div className="bg-white border border-purple/10 rounded-lg px-2.5 py-1.5">
-                <p className="font-bold text-gray-700">Precio fijo <span className="text-gray-400 font-normal">(por sesión)</span></p>
-                <p className="text-gray-500">Se cobra siempre el mismo monto sin importar la duración real.</p>
-                <p className="text-gray-400 font-mono">  Ej: Taller = $30.000 fija · ref 3 h</p>
+                <p className="font-bold text-gray-700">Por bloque <span className="text-gray-400 font-normal">(proporcional al bloque)</span></p>
+                <p className="text-gray-500">Definís un precio para N horas de referencia. La duración real del evento determina cuántos bloques (o fracción) se cobran.</p>
+                <p className="text-gray-400 font-mono">  Ej: $30.000 / 3 h → 6 h = $60.000 · 4 h = $40.000</p>
               </div>
             </div>
             <p className="text-xs text-gray-400 mt-1.5">• Eventos de <strong>día completo</strong> (sin hora) → sin cálculo de precio en modo por hora</p>

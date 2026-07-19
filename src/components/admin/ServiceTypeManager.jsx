@@ -71,12 +71,12 @@ function TypeForm({ initial, onSave, onCancel, saving }) {
         <div className="flex gap-3">
           {[
             { val: 'hora', label: 'Por hora', desc: 'proporcional a duración' },
-            { val: 'fijo', label: 'Precio fijo', desc: 'por sesión, sin importar duración' },
+            { val: 'fijo', label: 'Precio por bloque', desc: 'monto para N horas, proporcional si difiere' },
           ].map(({ val, label, desc }) => (
             <label key={val} className={`flex-1 flex items-start gap-2 cursor-pointer rounded-xl border px-3 py-2 transition ${
               tipoPrecio === val ? 'border-purple/40 bg-purple/5' : 'border-gray-200 hover:border-gray-300'
             }`}>
-              <input type="radio" name="tipoPrecio" value={val} checked={tipoPrecio === val}
+              <input type="radio" name={`tipoPrecio-${val}`} value={val} checked={tipoPrecio === val}
                 onChange={() => setTipoPrecio(val)} className="mt-0.5 accent-purple" />
               <div>
                 <p className="text-xs font-bold text-gray-700">{label}</p>
@@ -106,32 +106,38 @@ function TypeForm({ initial, onSave, onCancel, saving }) {
 
       {tipoPrecio === 'fijo' && (
         <div className="space-y-2">
-          <div>
-            <label className="text-xs font-bold text-gray-500 mb-1 block">
-              Precio fijo por sesión <span className="text-gray-400 font-normal">(CLP bruto)</span>
-            </label>
-            <input
-              type="number" min="0" step="500" placeholder="Ej: 30000"
-              value={precioFijo} onChange={(e) => setPrecioFijo(e.target.value)}
-              className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple/30"
-            />
-            <p className="text-xs text-gray-400 mt-1">
-              Se cobra siempre este monto por sesión, independiente de la duración real.
-            </p>
+          <div className="bg-purple/5 border border-purple/15 rounded-xl px-3 py-2 text-xs text-gray-600 space-y-0.5">
+            <p className="font-bold text-purple text-xs">📐 Cálculo proporcional al bloque</p>
+            <p>Definís un precio para una cantidad de horas de referencia.</p>
+            <p>Si el evento dura exactamente ese bloque → monto completo.</p>
+            <p>Si dura más o menos → se ajusta proporcionalmente.</p>
+            <p className="font-mono text-gray-500 pt-0.5">Ej: $30.000 / 3 h → evento 6 h = $60.000 · evento 4 h = $40.000</p>
           </div>
-          <div>
-            <label className="text-xs font-bold text-gray-500 mb-1 block">
-              Duración de referencia <span className="text-gray-400 font-normal">(horas — informativo)</span>
-            </label>
-            <input
-              type="number" min="0" step="0.5" placeholder="Ej: 3"
-              value={horasRef} onChange={(e) => setHorasRef(e.target.value)}
-              className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple/30"
-            />
-            <p className="text-xs text-gray-400 mt-1">
-              Se muestra en el PDF como referencia (ej: "Taller — $30.000 fijo · ref 3 h").
-            </p>
+          <div className="grid grid-cols-2 gap-2">
+            <div>
+              <label className="text-xs font-bold text-gray-500 mb-1 block">
+                Precio del bloque <span className="text-gray-400 font-normal">(CLP bruto)</span>
+              </label>
+              <input
+                type="number" min="0" step="500" placeholder="Ej: 30000"
+                value={precioFijo} onChange={(e) => setPrecioFijo(e.target.value)}
+                className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple/30"
+              />
+            </div>
+            <div>
+              <label className="text-xs font-bold text-gray-500 mb-1 block">
+                Horas del bloque <span className="text-gray-400 font-normal">(referencia)</span>
+              </label>
+              <input
+                type="number" min="0.5" step="0.5" placeholder="Ej: 3"
+                value={horasRef} onChange={(e) => setHorasRef(e.target.value)}
+                className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple/30"
+              />
+            </div>
           </div>
+          <p className="text-xs text-gray-400">
+            Precio efectivo/hr: {(precioFijo > 0 && horasRef > 0) ? `$${Math.round(Number(precioFijo) / Number(horasRef)).toLocaleString('es-CL')}/hr` : '—'}
+          </p>
         </div>
       )}
 
@@ -245,7 +251,7 @@ export function ServiceTypeManager({ serviceTypes, patientTypeCount, unknownType
                     </div>
                     {t.tipoPrecio === 'fijo' && t.precioFijo > 0 ? (
                       <span className="text-xs text-gray-400 flex-shrink-0 font-mono">
-                        ${t.precioFijo.toLocaleString('es-CL')} fijo{t.horasRef > 0 ? ` · ${t.horasRef}h ref` : ''}
+                        ${t.precioFijo.toLocaleString('es-CL')}{t.horasRef > 0 ? `/${t.horasRef}h` : ' bloque'}
                       </span>
                     ) : t.precioHora > 0 ? (
                       <span className="text-xs text-gray-400 flex-shrink-0 font-mono">

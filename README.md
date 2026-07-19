@@ -42,20 +42,23 @@ Sitio web y sistema de gestión de sesiones para Valentina Pau Roca, fonoaudiól
 
 Cada tipo de servicio puede configurarse en uno de dos modos desde el mantenedor:
 
-| Modo | Campo | Cálculo |
+| Modo | Campos | Fórmula |
 |---|---|---|
 | **Por hora** (default) | `precioHora` (CLP/hr) | `precio = durHours × precioHora` |
-| **Precio fijo** | `precioFijo` (CLP) + `horasRef` (ref.) | `precio = precioFijo` siempre |
+| **Por bloque** | `precioFijo` (CLP) + `horasRef` (h) | `precio = (durHours / horasRef) × precioFijo` |
 
 **Modo por hora** — proporcional a la duración real del evento:
 - Sesión de 1:00 h → precio completo
 - Sesión de 0:30 h → precio ÷ 2
 - Sesión de 1:30 h → precio × 1,5
-- Eventos de día completo (sin hora) → sin cálculo
 
-**Modo precio fijo** — monto constante por sesión independiente de la duración:
-- Ej: Taller = $30.000 siempre, ya dure 2 h o 3 h
-- `horasRef` es opcional e informativo (aparece en el PDF como referencia)
+**Modo por bloque** — precio base para N horas, proporcional si la duración difiere:
+- Parámetros: `precioFijo = $30.000` · `horasRef = 3 h`
+- Evento de 3 h → $30.000 (1 bloque exacto)
+- Evento de 6 h → $60.000 (2 bloques)
+- Evento de 4 h → $40.000 (4/3 del bloque)
+
+Eventos de día completo (sin hora definida) → sin cálculo en ambos modos.
 
 > Todos los montos son **brutos** (antes de retención). El campo `tipoPrecio` en Firestore determina el modo; si no existe (registros legacy) se asume `'hora'`.
 

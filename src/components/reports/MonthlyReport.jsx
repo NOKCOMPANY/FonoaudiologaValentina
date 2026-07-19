@@ -36,10 +36,17 @@ function formatHours(h) {
 }
 
 // ── Helper de precio por sesión (soporta modo 'hora' y 'fijo') ───────────────
+//
+// Modo 'hora': precio = durHours × precioHora  (proporcional a duración real)
+// Modo 'fijo': precio = (durHours / horasRef) × precioFijo
+//   → horasRef es el bloque de referencia definido en el tipo de servicio
+//   → si el evento dura el doble del bloque = se cobran dos bloques
+//   → ejemplo: precioFijo=$30.000, horasRef=3h, evento 4h → $40.000
 function calcPrecioSesion(st, durHours) {
   if (!st) return undefined
   if (st.tipoPrecio === 'fijo') {
-    return st.precioFijo > 0 ? st.precioFijo : undefined
+    if (!(st.precioFijo > 0) || !(st.horasRef > 0) || durHours === undefined) return undefined
+    return (durHours / st.horasRef) * st.precioFijo
   }
   // 'hora' (default cuando tipoPrecio no existe — retrocompatibilidad)
   if (durHours === undefined || !(st.precioHora > 0)) return undefined
