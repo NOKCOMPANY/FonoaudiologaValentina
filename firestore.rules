@@ -29,5 +29,8 @@ service cloud.firestore {
     match /reports/{id} {
       allow read, write: if canAccess();
     }
+    match /serviceTypes/{id} {
+      allow read, write: if canAccess();
+    }
   }
 }

@@ -4,7 +4,6 @@ import { useAuth } from '../../context/AuthContext'
 import { LoadingSpinner } from '../ui/LoadingSpinner'
 import { parseEvent } from '../../lib/parseEvent'
 import { markAttendanceWithPatient, getSessionsInRange, updateSessionType } from '../../hooks/useFirestore'
-import { TYPE_LABEL } from '../../lib/constants'
 
 function toLocalDateStr(d) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
@@ -15,21 +14,37 @@ function formatTime(dateStr) {
   return new Date(dateStr).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' })
 }
 
-const TYPE_STYLES = {
-  Taller:     { badge: 'bg-orange/10 text-orange border-orange/30',   border: 'border-l-orange' },
-  Babysitter: { badge: 'bg-teal/10 text-teal border-teal/30',         border: 'border-l-teal' },
-  Terapia:    { badge: 'bg-purple/10 text-purple border-purple/30',   border: 'border-l-purple' },
+// Mapas estáticos para que Tailwind incluya las clases en el build
+const COLOR_BADGE = {
+  teal:   'bg-teal/10 text-teal border-teal/30',
+  purple: 'bg-purple/10 text-purple border-purple/30',
+  orange: 'bg-orange/10 text-orange border-orange/30',
+  blue:   'bg-blue-100 text-blue-600 border-blue-200',
+  pink:   'bg-pink-100 text-pink-600 border-pink-200',
+  green:  'bg-green-100 text-green-700 border-green-200',
+  gray:   'bg-gray-100 text-gray-500 border-gray-200',
 }
-const DEFAULT_STYLE = { badge: 'bg-gray-100 text-gray-500 border-gray-200', border: 'border-l-gray-300' }
+const COLOR_BORDER = {
+  teal:   'border-l-teal',
+  purple: 'border-l-purple',
+  orange: 'border-l-orange',
+  blue:   'border-l-blue-400',
+  pink:   'border-l-pink-400',
+  green:  'border-l-green-500',
+  gray:   'border-l-gray-300',
+}
+const DEFAULT_BADGE  = COLOR_BADGE.gray
+const DEFAULT_BORDER = COLOR_BORDER.gray
 
-const TYPE_OPTIONS = ['Babysitter', 'Terapia', 'Taller']
-
-function SessionCard({ event, existingSession }) {
+function SessionCard({ event, existingSession, serviceTypes = [] }) {
   const parsed    = parseEvent(event.summary ?? '')
   // El tipo del documento Firestore tiene precedencia sobre el título del calendario
   const resolvedType = existingSession?.type || parsed.typeName
-  const styles    = TYPE_STYLES[resolvedType] ?? DEFAULT_STYLE
-  const typeLabel = TYPE_LABEL[resolvedType] ?? resolvedType
+
+  // Lookup dinámico de estilos según la regla del tipo de servicio
+  const stColor = (name) => serviceTypes.find((s) => s.displayName === name)?.color ?? 'gray'
+  const badgeOf  = (name) => COLOR_BADGE[stColor(name)]  ?? DEFAULT_BADGE
+  const borderOf = (name) => COLOR_BORDER[stColor(name)] ?? DEFAULT_BORDER
 
   const [status, setStatus]           = useState(null)
   const [saving, setSaving]           = useState(false)
@@ -44,6 +59,9 @@ function SessionCard({ event, existingSession }) {
   const [pendingType, setPendingType] = useState(null)
   const [retyping, setRetyping]       = useState(false)
   const [currentType, setCurrentType] = useState(resolvedType)
+
+  // Opciones de reclasificación: todos los tipos definidos en Firestore
+  const typeOptions = serviceTypes.map((s) => s.displayName)
 
   useEffect(() => {
     if (existingSession) {
@@ -85,16 +103,13 @@ function SessionCard({ event, existingSession }) {
     }
   }
 
-  const currentStyles = TYPE_STYLES[currentType] ?? DEFAULT_STYLE
-  const currentLabel  = TYPE_LABEL[currentType] ?? currentType
-
   return (
-    <div className={`bg-white rounded-2xl shadow-sm border-l-4 ${currentStyles.border} overflow-hidden`}>
+    <div className={`bg-white rounded-2xl shadow-sm border-l-4 ${borderOf(currentType)} overflow-hidden`}>
       <div className="p-4 flex items-center gap-3">
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-0.5 flex-wrap">
-            <span className={`text-xs font-bold px-2 py-0.5 rounded-full border ${currentStyles.badge}`}>
-              {currentLabel}
+            <span className={`text-xs font-bold px-2 py-0.5 rounded-full border ${badgeOf(currentType)}`}>
+              {currentType}
             </span>
             <span className="text-xs text-gray-400">
               {formatTime(event.start?.dateTime)} – {formatTime(event.end?.dateTime)}
@@ -115,7 +130,7 @@ function SessionCard({ event, existingSession }) {
           </p>
           <p className="text-xs mt-0.5">
             {parsed.typeName !== 'Sin clasificar'
-              ? <span className="text-gray-400">{currentLabel} · {parsed.patientName}</span>
+              ? <span className="text-gray-400">{currentType} · {parsed.patientName}</span>
               : <span className="text-orange font-medium">⚠ Sin clasificar — renombrar (ej: "BS Nombre")</span>
             }
           </p>
@@ -190,17 +205,17 @@ function SessionCard({ event, existingSession }) {
         <div className="px-4 pb-4 border-t border-orange/20 pt-3 bg-orange/5">
           <p className="text-xs text-orange font-bold mb-2">⚠️ Cambiar tipo de servicio registrado</p>
           <div className="flex gap-2 flex-wrap mb-2">
-            {TYPE_OPTIONS.map((t) => (
+            {typeOptions.map((t) => (
               <button
                 key={t}
                 onClick={() => setPendingType(t)}
                 className={`text-xs font-bold px-3 py-1.5 rounded-full border transition ${
                   pendingType === t
-                    ? 'bg-purple text-white border-purple'
+                    ? `${badgeOf(t)} ring-2 ring-offset-1 ring-current`
                     : 'bg-white text-gray-600 border-gray-200 hover:border-purple/40'
                 }`}
               >
-                {TYPE_LABEL[t] ?? t}
+                {t}
               </button>
             ))}
           </div>
@@ -210,7 +225,7 @@ function SessionCard({ event, existingSession }) {
               disabled={retyping}
               className="text-xs bg-orange hover:bg-orange/80 disabled:opacity-40 text-white font-bold px-4 py-1.5 rounded-full transition"
             >
-              {retyping ? 'Guardando...' : `Confirmar → ${TYPE_LABEL[pendingType] ?? pendingType}`}
+              {retyping ? 'Guardando...' : `Confirmar → ${pendingType}`}
             </button>
           )}
         </div>
@@ -231,7 +246,7 @@ function SessionCard({ event, existingSession }) {
   )
 }
 
-export function PrivateCalendar({ selectedDate }) {
+export function PrivateCalendar({ selectedDate, serviceTypes = [] }) {
   const { accessToken } = useAuth()
   const dateStr = toLocalDateStr(selectedDate)
   const { events, loading, error } = usePrivateEvents(accessToken, dateStr)
@@ -271,7 +286,7 @@ export function PrivateCalendar({ selectedDate }) {
   return (
     <div className="space-y-3">
       {events.map((event) => (
-        <SessionCard key={event.id} event={event} existingSession={sessionMap[event.id]} />
+        <SessionCard key={event.id} event={event} existingSession={sessionMap[event.id]} serviceTypes={serviceTypes} />
       ))}
     </div>
   )

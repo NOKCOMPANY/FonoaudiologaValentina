@@ -1,26 +1,39 @@
+// Mapa de alias → displayName canónico.
+// El admin puede sobreescribir este mapa con tipos dinámicos desde Firestore.
+let TYPE_MAP = {
+  bs: 'Babysitter', babysitter: 'Babysitter',
+  terapia: 'Terapia', taller: 'Taller',
+}
+
+// Llamado desde Admin.jsx al cargar los tipos desde Firestore.
+// Recibe { alias: displayName, ... } y reemplaza el mapa estático.
+export function setDynamicTypeMap(aliasToDisplay) {
+  TYPE_MAP = aliasToDisplay
+}
+
+function stripAccents(s) {
+  return s.normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+}
+
+function normalizeType(raw) {
+  // Intentar con y sin tilde — el alias guardado puede diferir del texto del evento
+  const key       = raw.toLowerCase()
+  const keyNorm   = stripAccents(key)
+  return TYPE_MAP[key] ?? TYPE_MAP[keyNorm] ?? (raw.charAt(0).toUpperCase() + raw.slice(1).toLowerCase())
+}
+
 export function parseEvent(summary = '') {
-  // Acepta: espacio solo "BS María", guión "BS - María", slash "BS/María", etc.
-  const match = summary.match(/^(BS|Babysitter|Terapia|Taller)[\s\-–—/:]+(.+)$/i)
+  // Primera palabra no-espacio = tipo de servicio, el resto = nombre del paciente
+  const match = summary.match(/^(\S+)[\s\-–—/:]+(.+)$/)
   if (!match) {
-    return {
-      type: null,
-      typeName: 'Sin clasificar',
-      patientName: summary,
-      patientId: slugify(summary),
-    }
+    return { type: null, typeName: 'Sin clasificar', patientName: summary, patientId: slugify(summary) }
   }
-  const typeMap = {
-    bs: 'Babysitter',
-    babysitter: 'Babysitter',
-    terapia: 'Terapia',
-    taller: 'Taller',
-  }
-  const key = match[1].toLowerCase()
+  const typeName = normalizeType(match[1].trim())
   return {
-    type: typeMap[key] ?? match[1],
-    typeName: typeMap[key] ?? match[1],
+    type:        typeName,
+    typeName,
     patientName: match[2].trim(),
-    patientId: slugify(match[2].trim()),
+    patientId:   slugify(match[2].trim()),
   }
 }
 

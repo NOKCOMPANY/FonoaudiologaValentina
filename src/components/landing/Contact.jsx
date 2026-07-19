@@ -1,7 +1,22 @@
 export function Contact() {
   return (
-    <section className="bg-cream py-16 px-6">
-      <div className="max-w-xl mx-auto text-center">
+    <section
+      className="relative overflow-hidden py-16 px-6"
+      style={{
+        background: 'linear-gradient(160deg, #fff8f0 0%, #f5edff 60%, #e8f9fd 100%)',
+      }}
+    >
+      {/* Orbs de fondo */}
+      <div
+        className="absolute -top-10 left-1/4 w-64 h-64 rounded-full pointer-events-none animate-drift-slow"
+        style={{ background: 'rgba(124,58,237,0.08)', filter: 'blur(50px)', animationDelay: '2s' }}
+      />
+      <div
+        className="absolute -bottom-10 right-1/4 w-48 h-48 rounded-full pointer-events-none animate-drift"
+        style={{ background: 'rgba(6,182,212,0.08)', filter: 'blur(40px)', animationDelay: '0s' }}
+      />
+
+      <div className="relative z-10 max-w-xl mx-auto text-center">
         <span className="text-5xl">💬</span>
         <h2 className="font-heading text-4xl text-purple mt-3">¡Contáctame!</h2>
         <p className="font-body text-gray-600 mt-3">

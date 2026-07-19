@@ -3,197 +3,467 @@ import jsPDF from 'jspdf'
 import autoTable from 'jspdf-autotable'
 import { useAuth } from '../../context/AuthContext'
 import { getPrivateEvents } from '../../lib/googleCalendar'
-import { getSessionsInRange, getAllPatients, saveReport, getReports } from '../../hooks/useFirestore'
+import { getSessionsInRange, getAllPatients, getServiceTypes } from '../../hooks/useFirestore'
 import { parseEvent } from '../../lib/parseEvent'
-import { TYPE_LABEL } from '../../lib/constants'
 import { LoadingSpinner } from '../ui/LoadingSpinner'
 
-const STEPS = ['Obteniendo calendario', 'Obteniendo asistencias', 'Procesando reporte']
-
-const TYPE_COLOR = {
-  Babysitter: 'text-teal font-bold',
-  Terapia:    'text-purple font-bold',
-  Taller:     'text-orange font-bold',
+// ── Datos profesionales para membrete PDF ─────────────────────────────────────
+const PROF_INFO = {
+  name:       'Valentina Pau Roca',
+  title:      'Fonoaudióloga',
+  university: 'Universidad de Chile',
+  email:      'valentinapauroca0@gmail.com',
+  phone:      '+56 9 6227 5500',
 }
 
-function getMonthRange(year, month) {
-  const start = new Date(year, month, 1)
-  const end   = new Date(year, month + 1, 0, 23, 59, 59, 999)
-  return { start, end }
+// ── Mapas estáticos para Tailwind (deben ser literales) ───────────────────────
+const COLOR_TEXT = {
+  teal:   'text-teal font-bold',
+  purple: 'text-purple font-bold',
+  orange: 'text-orange font-bold',
+  blue:   'text-blue-600 font-bold',
+  pink:   'text-pink-500 font-bold',
+  green:  'text-green-600 font-bold',
+  gray:   'text-gray-500 font-bold',
+}
+const COLOR_BAR = {
+  teal:   'bg-teal',
+  purple: 'bg-purple',
+  orange: 'bg-orange',
+  blue:   'bg-blue-400',
+  pink:   'bg-pink-400',
+  green:  'bg-green-500',
+  gray:   'bg-gray-300',
+}
+// RGB para jsPDF (sin CSS)
+const PDF_RGB = {
+  teal:   [20, 184, 166],
+  purple: [124, 58, 237],
+  orange: [249, 115, 22],
+  blue:   [59, 130, 246],
+  pink:   [236, 72, 153],
+  green:  [34, 197, 94],
+  gray:   [156, 163, 175],
 }
 
-function displayType(type) {
-  return TYPE_LABEL[type] ?? type ?? '—'
+// ── Helpers de formato ────────────────────────────────────────────────────────
+function calcDuration(startISO, endISO) {
+  if (!startISO || !endISO || !startISO.includes('T') || !endISO.includes('T')) return undefined
+  return (new Date(endISO) - new Date(startISO)) / 3_600_000
 }
 
-const SERVICE_KEYS = ['Babysitter', 'Terapia', 'Taller']
-
-function emptyTypeCounts() {
-  return Object.fromEntries(SERVICE_KEYS.map((k) => [k, { total: 0, attended: 0, absent: 0 }]))
+function formatCLP(n) {
+  if (n === undefined || n === null || n === 0) return '—'
+  return `$${Math.round(n).toLocaleString('es-CL')}`
 }
 
-// Construye la tabla de pacientes únicos a partir de los eventos del calendario
-function buildUniqueRows(events, sessionMap, patientMap) {
+function formatHours(h) {
+  if (h === undefined || h === null || h === 0) return '—'
+  if (h < 1) return `${Math.round(h * 60)} min`
+  if (h % 1 === 0) return `${h} h`
+  return `${h.toFixed(1)} h`
+}
+
+// ── Helpers dinámicos desde serviceTypes ──────────────────────────────────────
+function makeHelpers(serviceTypes) {
+  const colorOf  = (name) => serviceTypes.find((s) => s.displayName === name)?.color ?? 'gray'
+  const textOf   = (name) => COLOR_TEXT[colorOf(name)]  ?? COLOR_TEXT.gray
+  const barOf    = (name) => COLOR_BAR[colorOf(name)]   ?? COLOR_BAR.gray
+  const pdfOf    = (name) => PDF_RGB[colorOf(name)]     ?? PDF_RGB.gray
+  const precioOf = (name) => serviceTypes.find((s) => s.displayName === name)?.precioHora ?? 0
+  const shortOf  = (name) => {
+    const st = serviceTypes.find((s) => s.displayName === name)
+    if (st?.aliases?.[0]) return st.aliases[0].toUpperCase().slice(0, 4)
+    return name.slice(0, 5)
+  }
+  return { colorOf, textOf, barOf, pdfOf, precioOf, shortOf }
+}
+
+// ── Construcción de filas ─────────────────────────────────────────────────────
+function buildUniqueRows(events, sessionMap, patientMap, serviceTypes) {
   const byPatient = {}
 
   events.forEach((ev) => {
-    const parsed  = parseEvent(ev.summary ?? '')
-    const sess    = sessionMap[ev.id]
-    const pid     = parsed.patientId || sess?.patientId || 'sin-registrar'
-    // El tipo del documento Firestore tiene precedencia sobre el título del calendario
-    const type    = sess?.type || parsed.typeName || 'Sin clasificar'
-    const name    = parsed.patientName || patientMap[pid]?.name || ev.summary || 'Sin registrar'
-    const fullName = patientMap[pid]?.fullName || null
+    const parsed      = parseEvent(ev.summary ?? '')
+    const sess        = sessionMap[ev.id]
+    const pid         = parsed.patientId || sess?.patientId || 'sin-registrar'
+    const type        = sess?.type || parsed.typeName || 'Sin clasificar'
+    const name        = parsed.patientName || patientMap[pid]?.name || ev.summary || 'Sin registrar'
+    const fullName    = patientMap[pid]?.fullName || null
+    const description = patientMap[pid]?.description || null
+
+    const durHours  = calcDuration(ev.start?.dateTime, ev.end?.dateTime)
+    const precioHora = serviceTypes.find((s) => s.displayName === type)?.precioHora ?? 0
+    const precio    = (durHours !== undefined && precioHora > 0) ? durHours * precioHora : undefined
 
     if (!byPatient[pid]) {
-      byPatient[pid] = { patientName: name, fullName, types: new Set(), total: 0, attended: 0, absent: 0, typeCounts: emptyTypeCounts() }
+      byPatient[pid] = {
+        patientName: name, fullName, description,
+        total: 0, attended: 0, absent: 0,
+        typeCounts: {},
+        sessions: [],
+      }
     }
-    byPatient[pid].types.add(type)
+
+    byPatient[pid].sessions.push({
+      startDateTime: ev.start?.dateTime ?? ev.start?.date,
+      endDateTime:   ev.end?.dateTime   ?? ev.end?.date,
+      type, attended: sess?.attended, notes: sess?.notes ?? '',
+      durHours, precio,
+    })
+
     byPatient[pid].total++
-    if (byPatient[pid].typeCounts[type]) {
-      byPatient[pid].typeCounts[type].total++
+    if (!byPatient[pid].typeCounts[type]) {
+      byPatient[pid].typeCounts[type] = { total: 0, attended: 0, absent: 0, horasAgendadas: 0, montoAgendado: 0, montoAsistido: 0 }
     }
+    const tc = byPatient[pid].typeCounts[type]
+    tc.total++
+
     if (sess?.attended !== undefined) {
       sess.attended ? byPatient[pid].attended++ : byPatient[pid].absent++
-      if (byPatient[pid].typeCounts[type]) {
-        sess.attended
-          ? byPatient[pid].typeCounts[type].attended++
-          : byPatient[pid].typeCounts[type].absent++
+      sess.attended ? tc.attended++ : tc.absent++
+    }
+    if (durHours !== undefined) {
+      tc.horasAgendadas += durHours
+      if (precio !== undefined) {
+        tc.montoAgendado += precio
+        if (sess?.attended) tc.montoAsistido += precio
       }
     }
   })
 
-  return Object.values(byPatient).map((r) => ({
-    patientName: r.fullName || r.patientName,
-    types: [...r.types],
-    total: r.total,
-    attended: r.attended,
-    absent: r.absent,
-    pct: r.total > 0 ? Math.round((r.attended / r.total) * 100) : 0,
-    typeCounts: r.typeCounts,
-  }))
+  return Object.values(byPatient)
+    .map((r) => ({
+      patientName:   r.fullName || r.patientName,
+      rawName:       r.patientName,
+      description:   r.description,
+      total:         r.total,
+      attended:      r.attended,
+      absent:        r.absent,
+      pct:           r.total > 0 ? Math.round((r.attended / r.total) * 100) : 0,
+      typeCounts:    r.typeCounts,
+      montoTotal:    Object.values(r.typeCounts).reduce((a, tc) => a + tc.montoAgendado, 0),
+      montoAsistido: Object.values(r.typeCounts).reduce((a, tc) => a + tc.montoAsistido, 0),
+      sessions:      r.sessions.sort((a, b) => new Date(a.startDateTime) - new Date(b.startDateTime)),
+    }))
+    .sort((a, b) => a.patientName.localeCompare(b.patientName, 'es'))
 }
 
+// ── Membrete jsPDF ────────────────────────────────────────────────────────────
+function drawHeader(doc, y = 14) {
+  const purple = [124, 58, 237]
+  const gray   = [100, 100, 100]
+
+  // Rectángulo de fondo claro
+  doc.setFillColor(245, 240, 255)
+  doc.rect(14, y - 4, 182, 20, 'F')
+  // Borde izquierdo morado
+  doc.setFillColor(...purple)
+  doc.rect(14, y - 4, 3, 20, 'F')
+
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(11)
+  doc.setTextColor(...purple)
+  doc.text(`${PROF_INFO.name} — ${PROF_INFO.title}`, 21, y + 2)
+
+  doc.setFont('helvetica', 'normal')
+  doc.setFontSize(8.5)
+  doc.setTextColor(...gray)
+  doc.text(PROF_INFO.university, 21, y + 7)
+  doc.text(`${PROF_INFO.email}   |   WhatsApp: ${PROF_INFO.phone}`, 21, y + 12)
+
+  return y + 24
+}
+
+// ── PDF individual paciente ───────────────────────────────────────────────────
+function exportPatientPDF(row, reportName) {
+  const doc    = new jsPDF()
+  const purple = [124, 58, 237]
+  const gray   = [100, 100, 100]
+  let y = 14
+
+  y = drawHeader(doc, y)
+
+  // Título
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(13)
+  doc.setTextColor(...purple)
+  doc.text('INFORME DE ATENCIONES FONOAUDIOLÓGICAS', 14, y); y += 7
+
+  // Datos del período / paciente
+  doc.setFont('helvetica', 'normal')
+  doc.setFontSize(9.5)
+  doc.setTextColor(...gray)
+  if (reportName) { doc.text(`Período: ${reportName}`, 14, y); y += 5 }
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(11)
+  doc.setTextColor(30, 30, 30)
+  doc.text(row.patientName, 14, y); y += 5
+  if (row.description) {
+    doc.setFont('helvetica', 'italic')
+    doc.setFontSize(9)
+    doc.setTextColor(...gray)
+    doc.text(row.description, 14, y); y += 5
+  }
+  doc.setFont('helvetica', 'normal')
+  doc.setFontSize(9.5)
+  doc.setTextColor(...gray)
+  doc.text(`Asistencia global: ${row.pct}%  (${row.attended} de ${row.total} sesiones agendadas)`, 14, y); y += 7
+
+  // ── Tabla resumen por tipo de servicio ────────────────────────────────────
+  const typeEntries = Object.entries(row.typeCounts).filter(([, tc]) => tc.total > 0)
+  const totalHoras  = typeEntries.reduce((a, [, tc]) => a + tc.horasAgendadas, 0)
+
+  const serviceRows = typeEntries.map(([type, tc]) => [
+    type,
+    tc.horasAgendadas > 0 ? formatHours(tc.horasAgendadas) : '—',
+    tc.total,
+    tc.attended,
+    tc.absent,
+    tc.montoAgendado > 0 ? formatCLP(tc.montoAgendado) : '—',
+  ])
+  serviceRows.push([
+    'TOTAL',
+    totalHoras > 0 ? formatHours(totalHoras) : '—',
+    row.total,
+    row.attended,
+    row.absent,
+    row.montoTotal > 0 ? `${formatCLP(row.montoTotal)} (BRUTO)` : '—',
+  ])
+
+  autoTable(doc, {
+    startY: y,
+    head: [['Servicio', 'Horas', 'Agendadas', 'Asistidas', 'Ausentes', 'Monto Bruto']],
+    body: serviceRows,
+    headStyles: { fillColor: purple, fontStyle: 'bold', fontSize: 9 },
+    alternateRowStyles: { fillColor: [253, 248, 240] },
+    styles: { fontSize: 9, cellPadding: 3 },
+    columnStyles: { 1: { halign: 'center' }, 2: { halign: 'center' }, 3: { halign: 'center' }, 4: { halign: 'center' }, 5: { halign: 'right', fontStyle: 'bold' } },
+    didParseCell: (data) => {
+      if (data.section === 'body' && data.row.index === serviceRows.length - 1) {
+        data.cell.styles.fontStyle = 'bold'
+        data.cell.styles.fillColor = [230, 220, 255]
+      }
+    },
+  })
+  y = doc.lastAutoTable.finalY + 10
+
+  // ── Detalle por día ───────────────────────────────────────────────────────
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(11)
+  doc.setTextColor(...purple)
+  doc.text('Detalle por día', 14, y); y += 5
+
+  // Agrupar sesiones por fecha local
+  const byDay = {}
+  ;(row.sessions ?? []).forEach((s) => {
+    if (!s.startDateTime?.includes('T')) return
+    const d   = new Date(s.startDateTime)
+    const key = d.toISOString().slice(0, 10)
+    if (!byDay[key]) {
+      byDay[key] = {
+        label: d.toLocaleDateString('es-CL', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }),
+        sessions: [],
+      }
+    }
+    byDay[key].sessions.push(s)
+  })
+
+  const dayKeys = Object.keys(byDay).sort()
+
+  if (dayKeys.length === 0) {
+    doc.setFont('helvetica', 'italic')
+    doc.setFontSize(9)
+    doc.setTextColor(...gray)
+    doc.text('Sin sesiones con horario definido en este período.', 14, y)
+    y += 8
+  }
+
+  dayKeys.forEach((key) => {
+    const { label, sessions: daySessions } = byDay[key]
+    const dayMonto = daySessions.reduce((a, s) => a + (s.precio ?? 0), 0)
+    const dayHoras = daySessions.reduce((a, s) => a + (s.durHours ?? 0), 0)
+
+    // Encabezado del día
+    const sessLabel = `${daySessions.length} sesión${daySessions.length !== 1 ? 'es' : ''}`
+    const dayRows = daySessions.map((s) => {
+      const ini    = new Date(s.startDateTime).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' })
+      const fin    = s.endDateTime?.includes('T')
+        ? new Date(s.endDateTime).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' })
+        : '—'
+      const dur    = s.durHours !== undefined ? formatHours(s.durHours) : '—'
+      const estado = s.attended === true ? '✓ Asistió' : s.attended === false ? '✗ Ausente' : '— Sin marcar'
+      const precio = s.precio !== undefined ? formatCLP(s.precio) : '—'
+      return [`${ini}–${fin}`, dur, s.type, estado, precio]
+    })
+    // Fila subtotal
+    dayRows.push([
+      `Subtotal día: ${formatHours(dayHoras)}`,
+      '', '', '',
+      dayMonto > 0 ? `${formatCLP(dayMonto)} bruto` : '—',
+    ])
+
+    autoTable(doc, {
+      startY: y,
+      head: [[{ content: `${label.charAt(0).toUpperCase() + label.slice(1)} — ${sessLabel}`, colSpan: 5, styles: { fillColor: [230, 220, 255], textColor: [...purple], fontStyle: 'bold', fontSize: 9 } }],
+             ['Horario', 'Duración', 'Tipo', 'Estado', 'Precio']],
+      body: dayRows,
+      headStyles: { fillColor: [245, 240, 255], textColor: [80, 60, 120], fontSize: 8.5 },
+      alternateRowStyles: { fillColor: [250, 248, 255] },
+      styles: { fontSize: 8.5, cellPadding: 2.5 },
+      columnStyles: {
+        0: { cellWidth: 32 },
+        1: { cellWidth: 22, halign: 'center' },
+        3: { cellWidth: 28 },
+        4: { cellWidth: 28, halign: 'right', fontStyle: 'bold' },
+      },
+      didParseCell: (data) => {
+        if (data.section === 'body' && data.row.index === dayRows.length - 1) {
+          data.cell.styles.fillColor = [240, 235, 255]
+          data.cell.styles.fontStyle = 'bold'
+        }
+        if (data.section === 'body' && data.column.index === 3 && data.row.index < dayRows.length - 1) {
+          const val = data.cell.raw
+          data.cell.styles.textColor = val?.includes('✓') ? [22, 163, 74] : val?.includes('✗') ? [220, 50, 50] : [150, 150, 150]
+        }
+      },
+    })
+    y = doc.lastAutoTable.finalY + 6
+  })
+
+  // ── Glosa SII ─────────────────────────────────────────────────────────────
+  y += 4
+  doc.setFillColor(245, 245, 245)
+  doc.setDrawColor(200, 200, 200)
+
+  const siiLines = [
+    'INFORMACIÓN TRIBUTARIA',
+    `Monto Bruto Total del Período: ${formatCLP(row.montoTotal)}`,
+    'Los servicios descritos en este informe son prestaciones de salud fonoaudiológica.',
+    'Para la emisión de la boleta de honorarios correspondiente, el prestador debe ingresar a',
+    'www.sii.cl → Servicios Online → Boleta de Honorarios Electrónica.',
+    'Este documento tiene carácter informativo y no reemplaza la boleta tributaria.',
+  ]
+
+  // Verificar si hay espacio, si no agregar página
+  if (y + siiLines.length * 5 + 12 > 280) {
+    doc.addPage()
+    y = 20
+  }
+
+  doc.rect(14, y, 182, siiLines.length * 4.5 + 8, 'FD')
+  y += 5
+  siiLines.forEach((line, i) => {
+    doc.setFont('helvetica', i === 0 ? 'bold' : 'normal')
+    doc.setFontSize(i === 0 ? 9 : 8)
+    doc.setTextColor(i === 0 ? 80 : 100, i === 0 ? 80 : 100, i === 0 ? 80 : 100)
+    doc.text(line, 17, y); y += 4.5
+  })
+
+  doc.save(`informe-${row.patientName.replace(/\s+/g, '-').toLowerCase()}-${reportName?.replace(/\s+/g, '-') ?? 'reporte'}.pdf`)
+}
+
+// ── CSV individual ────────────────────────────────────────────────────────────
 function exportPatientCSV(row) {
-  const lines = ['Servicio,Agendadas,Asistidas,Ausentes']
-  SERVICE_KEYS.forEach((key) => {
-    const tc = row.typeCounts?.[key]
-    if (tc && tc.total > 0) {
-      lines.push(`"${displayType(key)}",${tc.total},${tc.attended},${tc.absent}`)
+  const lines = ['Servicio,Precio/hr,Horas,Agendadas,Asistidas,Ausentes,Monto Bruto']
+  Object.entries(row.typeCounts).forEach(([type, tc]) => {
+    if (tc.total > 0) {
+      lines.push(`"${type}",${tc.montoAgendado > 0 ? tc.montoAgendado / (tc.horasAgendadas || 1) : ''},${tc.horasAgendadas.toFixed(2)},${tc.total},${tc.attended},${tc.absent},${tc.montoAgendado}`)
     }
   })
-  lines.push(`Total,${row.total},${row.attended},${row.absent}`)
+  lines.push(`Total,,${Object.values(row.typeCounts).reduce((a, tc) => a + tc.horasAgendadas, 0).toFixed(2)},${row.total},${row.attended},${row.absent},${row.montoTotal}`)
+  lines.push('')
+  lines.push('Fecha,Hora ini.,Hora fin,Duración,Tipo,Precio sesión,Estado,Nota')
+  ;(row.sessions ?? []).forEach((s) => {
+    const start  = s.startDateTime?.includes('T') ? new Date(s.startDateTime) : null
+    const end    = s.endDateTime?.includes('T')   ? new Date(s.endDateTime)   : null
+    const fecha  = start ? start.toLocaleDateString('es-CL') : '—'
+    const ini    = start ? start.toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' }) : '—'
+    const fin    = end   ? end.toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' })   : '—'
+    const dur    = s.durHours !== undefined ? s.durHours.toFixed(2) : ''
+    const estado = s.attended === true ? 'Asistió' : s.attended === false ? 'No asistió' : 'Sin registrar'
+    lines.push(`"${fecha}","${ini}","${fin}","${dur}","${s.type}",${s.precio ?? ''},"${estado}","${s.notes}"`)
+  })
   const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8;' })
   const url  = URL.createObjectURL(blob)
-  const a    = document.createElement('a')
-  a.href     = url
-  a.download = `paciente-${row.patientName.replace(/\s+/g, '-')}.csv`
-  a.click()
+  const a    = document.createElement('a'); a.href = url
+  a.download = `informe-${row.patientName.replace(/\s+/g, '-').toLowerCase()}.csv`; a.click()
   URL.revokeObjectURL(url)
 }
 
-function exportPatientPDF(row) {
-  const doc    = new jsPDF()
-  const purple = [124, 58, 237]
-
-  doc.setFont('helvetica', 'bold')
-  doc.setFontSize(16)
-  doc.setTextColor(...purple)
-  doc.text(row.patientName, 14, 20)
-
-  const serviceRows = SERVICE_KEYS
-    .filter((key) => row.typeCounts?.[key]?.total > 0)
-    .map((key) => {
-      const tc = row.typeCounts[key]
-      return [displayType(key), tc.total, tc.attended, tc.absent]
-    })
-  serviceRows.push(['Total', row.total, row.attended, row.absent])
-
-  autoTable(doc, {
-    startY: 28,
-    head: [['Servicio', 'Agendadas', 'Asistidas', 'Ausentes']],
-    body: serviceRows,
-    headStyles: { fillColor: purple, fontStyle: 'bold' },
-    alternateRowStyles: { fillColor: [253, 248, 240] },
-    styles: { fontSize: 10, cellPadding: 4 },
-  })
-
-  doc.save(`paciente-${row.patientName.replace(/\s+/g, '-')}.pdf`)
-}
-
+// ── CSV general ───────────────────────────────────────────────────────────────
 function exportFullCSV(rows, name) {
-  const header = ['Paciente', ...SERVICE_KEYS.flatMap((k) => [`${k} agendadas`, `${k} asistidas`]), 'Total agendadas', 'Total asistidas', '%'].join(',')
+  const allTypes = [...new Set(rows.flatMap((r) => Object.keys(r.typeCounts)))]
+  const header   = ['Paciente', ...allTypes.flatMap((k) => [`${k} ag.`, `${k} as.`, `${k} monto`]), 'Total ag.', 'Total as.', '%', 'Monto Bruto'].join(',')
   const body = rows.map((r) => {
-    const typeCols = SERVICE_KEYS.flatMap((k) => {
-      const tc = r.typeCounts?.[k] ?? { total: 0, attended: 0 }
-      return [tc.total, tc.attended]
+    const typeCols = allTypes.flatMap((k) => {
+      const tc = r.typeCounts?.[k] ?? { total: 0, attended: 0, montoAgendado: 0 }
+      return [tc.total, tc.attended, tc.montoAgendado]
     })
-    return [`"${r.patientName}"`, ...typeCols, r.total, r.attended, `${r.pct}%`].join(',')
+    return [`"${r.patientName}"`, ...typeCols, r.total, r.attended, `${r.pct}%`, r.montoTotal].join(',')
   }).join('\n')
   const blob = new Blob([header + '\n' + body], { type: 'text/csv;charset=utf-8;' })
   const url  = URL.createObjectURL(blob)
-  const a    = document.createElement('a')
-  a.href     = url
-  a.download = `reporte-completo-${name}.csv`
-  a.click()
+  const a    = document.createElement('a'); a.href = url
+  a.download = `reporte-${name}.csv`; a.click()
   URL.revokeObjectURL(url)
 }
 
-function exportCSV(rows, name) {
-  const header = 'Paciente,Servicios,Agendadas,Asistidas,Ausentes,Porcentaje\n'
-  const body   = rows.map((r) =>
-    `"${r.patientName}","${r.types.map(displayType).join(' / ')}",${r.total},${r.attended},${r.absent},${r.pct}%`
-  ).join('\n')
-  const blob = new Blob([header + body], { type: 'text/csv;charset=utf-8;' })
-  const url  = URL.createObjectURL(blob)
-  const a    = document.createElement('a')
-  a.href     = url
-  a.download = `reporte-${name}.csv`
-  a.click()
-  URL.revokeObjectURL(url)
-}
-
+// ── PDF general ───────────────────────────────────────────────────────────────
 function exportPDF(rows, name) {
   const doc    = new jsPDF()
   const purple = [124, 58, 237]
+  let y = 14
+
+  y = drawHeader(doc, y)
 
   doc.setFont('helvetica', 'bold')
-  doc.setFontSize(18)
+  doc.setFontSize(15)
   doc.setTextColor(...purple)
-  doc.text('Reporte de Asistencia', 14, 20)
+  doc.text('Reporte de Asistencia', 14, y); y += 6
 
   doc.setFont('helvetica', 'normal')
-  doc.setFontSize(11)
+  doc.setFontSize(10)
   doc.setTextColor(80, 80, 80)
-  doc.text(name, 14, 28)
-  doc.text(
-    `Generado: ${new Date().toLocaleDateString('es-CL', { day: 'numeric', month: 'long', year: 'numeric' })}`,
-    14, 34
-  )
+  doc.text(name, 14, y); y += 5
+  doc.text(`Generado: ${new Date().toLocaleDateString('es-CL', { day: 'numeric', month: 'long', year: 'numeric' })}`, 14, y); y += 7
 
   autoTable(doc, {
-    startY: 42,
-    head: [['Paciente', 'Servicios', 'Agendadas', 'Asistidas', 'Ausentes', '%']],
+    startY: y,
+    head: [['Paciente', 'Servicios', 'Agendadas', 'Asistidas', 'Ausentes', '%', 'Monto Bruto']],
     body: rows.map((r) => [
-      r.patientName,
-      r.types.map(displayType).join('\n'),
-      r.total,
-      r.attended,
-      r.absent,
-      `${r.pct}%`,
+      r.patientName + (r.description ? `\n${r.description}` : ''),
+      Object.entries(r.typeCounts)
+        .filter(([, tc]) => tc.total > 0)
+        .map(([type, tc]) => `${type}: ${tc.attended}/${tc.total}${tc.montoAgendado > 0 ? ` (${formatCLP(tc.montoAgendado)})` : ''}`)
+        .join('\n'),
+      r.total, r.attended, r.absent, `${r.pct}%`,
+      r.montoTotal > 0 ? formatCLP(r.montoTotal) : '—',
     ]),
     headStyles: { fillColor: purple, fontStyle: 'bold' },
     alternateRowStyles: { fillColor: [253, 248, 240] },
-    styles: { fontSize: 10, cellPadding: 4 },
-    columnStyles: { 1: { cellWidth: 55 } },
+    styles: { fontSize: 9, cellPadding: 3 },
+    columnStyles: { 1: { cellWidth: 60 }, 6: { halign: 'right', fontStyle: 'bold' } },
   })
+
+  // Totales
+  const totalMonto     = rows.reduce((a, r) => a + r.montoTotal, 0)
+  const totalSesiones  = rows.reduce((a, r) => a + r.total, 0)
+  const totalAsistidas = rows.reduce((a, r) => a + r.attended, 0)
+  const yFinal = doc.lastAutoTable.finalY + 8
+
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(10)
+  doc.setTextColor(...purple)
+  doc.text(`Total general: ${totalSesiones} sesiones · ${totalAsistidas} asistidas · Monto Bruto: ${formatCLP(totalMonto)}`, 14, yFinal)
 
   doc.save(`reporte-${name}.pdf`)
 }
 
-function ReportTable({ report }) {
-  const { uniqueRows = [], customName, name } = report
-  const displayName = customName || name
+// ── Tabla de reporte (web) ────────────────────────────────────────────────────
+function ReportTable({ report, helpers }) {
+  const { uniqueRows = [], name } = report
+  const { textOf, barOf, shortOf } = helpers
 
   if (uniqueRows.length === 0) {
     return <p className="text-gray-400 py-4 text-center">Sin eventos en este período</p>
@@ -205,7 +475,7 @@ function ReportTable({ report }) {
         <table className="w-full text-sm font-body">
           <thead className="bg-purple text-white">
             <tr>
-              {['', 'Paciente', 'Servicios', 'Agendadas', 'Asistidas', 'Ausentes', '%'].map((h, i) => (
+              {['', 'Paciente', 'Servicios', 'Agendadas', 'Asistidas', 'Ausentes', '%', 'Monto Bruto'].map((h, i) => (
                 <th key={i} className="py-3 px-3 text-left font-bold whitespace-nowrap">{h}</th>
               ))}
             </tr>
@@ -213,7 +483,6 @@ function ReportTable({ report }) {
           <tbody>
             {uniqueRows.map((r, i) => (
               <tr key={i} className={i % 2 === 0 ? 'bg-white' : 'bg-cream'}>
-                {/* Botones al inicio */}
                 <td className="py-2 px-3 whitespace-nowrap">
                   <button
                     onClick={() => exportPatientCSV(r)}
@@ -221,45 +490,82 @@ function ReportTable({ report }) {
                     title="CSV de este paciente"
                   >CSV</button>
                   <button
-                    onClick={() => exportPatientPDF(r)}
+                    onClick={() => exportPatientPDF(r, name)}
                     className="bg-purple/10 hover:bg-purple/20 text-purple border border-purple/30 text-xs font-bold px-2 py-1 rounded-full transition"
                     title="PDF de este paciente"
                   >PDF</button>
                 </td>
-                <td className="py-3 px-3 font-bold text-gray-800 whitespace-nowrap">{r.patientName}</td>
-                {/* Servicios con conteos */}
+                <td className="py-3 px-3 font-bold text-gray-800 whitespace-nowrap">
+                  {r.patientName}
+                  {r.description && (
+                    <p className="text-xs font-normal text-gray-400 truncate max-w-32">{r.description}</p>
+                  )}
+                </td>
+
+                {/* Barras de progreso por tipo */}
                 <td className="py-3 px-3">
-                  <div className="flex flex-col gap-0.5">
-                    {SERVICE_KEYS.filter((k) => r.typeCounts?.[k]?.total > 0).map((k) => (
-                      <span key={k} className={`text-xs ${TYPE_COLOR[k] ?? 'text-gray-500'}`}>
-                        {displayType(k)}: {r.typeCounts[k].total}
-                      </span>
-                    ))}
+                  <div className="space-y-2 min-w-32">
+                    {Object.entries(r.typeCounts)
+                      .filter(([, tc]) => tc.total > 0)
+                      .map(([type, tc]) => {
+                        const pct = tc.total > 0 ? Math.round((tc.attended / tc.total) * 100) : 0
+                        return (
+                          <div key={type}>
+                            <div className="flex items-center justify-between mb-0.5">
+                              <span className={`text-xs ${textOf(type)}`}>{shortOf(type)}</span>
+                              <span className="text-xs text-gray-500 font-mono">
+                                {tc.attended}<span className="text-gray-300">/{tc.total}</span>
+                              </span>
+                            </div>
+                            <div className="h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                              <div className={`h-full rounded-full ${barOf(type)}`} style={{ width: `${pct}%` }} />
+                            </div>
+                            {tc.montoAgendado > 0 && (
+                              <p className="text-xs text-gray-400 mt-0.5 font-mono">{formatCLP(tc.montoAgendado)}</p>
+                            )}
+                          </div>
+                        )
+                      })}
                   </div>
                 </td>
+
                 <td className="py-3 px-3 text-gray-600 text-center">{r.total}</td>
                 <td className="py-3 px-3 text-green-600 font-bold text-center">{r.attended}</td>
                 <td className="py-3 px-3 text-red-500 font-bold text-center">{r.absent}</td>
                 <td className="py-3 px-3 text-center">
-                  <span className={`font-bold ${r.pct >= 80 ? 'text-green-600' : 'text-orange'}`}>
-                    {r.pct}%
-                  </span>
+                  <span className={`font-bold ${r.pct >= 80 ? 'text-green-600' : 'text-orange'}`}>{r.pct}%</span>
+                </td>
+                <td className="py-3 px-3 text-right font-mono font-bold text-gray-700 whitespace-nowrap">
+                  {r.montoTotal > 0 ? formatCLP(r.montoTotal) : <span className="text-gray-300">—</span>}
                 </td>
               </tr>
             ))}
           </tbody>
+          {/* Fila de totales */}
+          <tfoot className="bg-purple/10 border-t-2 border-purple/20">
+            <tr>
+              <td colSpan={3} className="py-2 px-3 text-xs font-bold text-purple">Total general</td>
+              <td className="py-2 px-3 text-center font-bold text-gray-700">{uniqueRows.reduce((a, r) => a + r.total, 0)}</td>
+              <td className="py-2 px-3 text-center font-bold text-green-600">{uniqueRows.reduce((a, r) => a + r.attended, 0)}</td>
+              <td className="py-2 px-3 text-center font-bold text-red-500">{uniqueRows.reduce((a, r) => a + r.absent, 0)}</td>
+              <td className="py-2 px-3"></td>
+              <td className="py-2 px-3 text-right font-mono font-bold text-purple">
+                {formatCLP(uniqueRows.reduce((a, r) => a + r.montoTotal, 0))}
+              </td>
+            </tr>
+          </tfoot>
         </table>
       </div>
 
       <div className="flex gap-2 flex-wrap">
         <button
-          onClick={() => exportFullCSV(uniqueRows, displayName)}
+          onClick={() => exportFullCSV(uniqueRows, name)}
           className="bg-teal hover:bg-teal/80 text-white font-bold py-2.5 px-5 rounded-full transition text-sm"
         >
           📥 CSV general
         </button>
         <button
-          onClick={() => exportPDF(uniqueRows, displayName)}
+          onClick={() => exportPDF(uniqueRows, name)}
           className="bg-purple hover:bg-purple/80 text-white font-bold py-2.5 px-5 rounded-full transition text-sm"
         >
           📄 PDF
@@ -269,240 +575,94 @@ function ReportTable({ report }) {
   )
 }
 
+// ── Componente principal ──────────────────────────────────────────────────────
 export function MonthlyReport() {
   const { accessToken } = useAuth()
   const now = new Date()
-  const [year, setYear]   = useState(now.getFullYear())
-  const [month, setMonth] = useState(now.getMonth())
 
-  const [step, setStep]         = useState(0)
-  const [genError, setGenError] = useState(null)
-
-  const [pendingReport, setPendingReport] = useState(null)
-  const [reportName, setReportName]       = useState('')
-  const [saving, setSaving]               = useState(false)
-  const [saveError, setSaveError]         = useState(null)
-
-  const [activeReport, setActiveReport] = useState(null)
-  const [savedReports, setSavedReports] = useState([])
-  const [loadingList, setLoadingList]   = useState(true)
-  const [filter, setFilter]             = useState('')
+  const [year, setYear]         = useState(now.getFullYear())
+  const [month, setMonth]       = useState(now.getMonth())
+  const [report, setReport]     = useState(null)
+  const [loading, setLoading]   = useState(false)
+  const [error, setError]       = useState(null)
+  const [serviceTypes, setServiceTypes] = useState([])
 
   useEffect(() => {
-    getReports()
-      .then(setSavedReports)
-      .catch(() => setSavedReports([]))
-      .finally(() => setLoadingList(false))
+    getServiceTypes()
+      .then(setServiceTypes)
+      .catch((e) => console.error('[MonthlyReport] serviceTypes:', e))
   }, [])
+
+  const helpers = makeHelpers(serviceTypes)
+
+  const prevMonth = () => { setReport(null); if (month === 0) { setYear((y) => y - 1); setMonth(11) } else setMonth((m) => m - 1) }
+  const nextMonth = () => { setReport(null); if (month === 11) { setYear((y) => y + 1); setMonth(0) } else setMonth((m) => m + 1) }
 
   const monthLabel = new Date(year, month).toLocaleDateString('es-CL', { month: 'long', year: 'numeric' })
 
   const handleGenerate = async () => {
-    if (!accessToken) return
-    setGenError(null)
-    setPendingReport(null)
-    setStep(1)
+    if (!accessToken || loading) return
+    setError(null); setReport(null); setLoading(true)
     try {
-      const { start, end } = getMonthRange(year, month)
+      const start = new Date(year, month, 1, 0, 0, 0)
+      const end   = new Date(year, month + 1, 0, 23, 59, 59)
 
-      const calData = await getPrivateEvents(accessToken, start.toISOString(), end.toISOString())
-      setStep(2)
-
-      const [sessions, patients] = await Promise.all([
+      const [freshTypes, calData, sessions, patients] = await Promise.all([
+        getServiceTypes().catch(() => serviceTypes),
+        getPrivateEvents(accessToken, start.toISOString(), end.toISOString()),
         getSessionsInRange(start, end).catch(() => []),
         getAllPatients().catch(() => []),
       ])
-      setStep(3)
+      setServiceTypes(freshTypes)
 
       const events     = calData.items ?? []
       const sessionMap = Object.fromEntries(sessions.map((s) => [s.calendarEventId, s]))
       const patientMap = Object.fromEntries(patients.map((p) => [p.id, p]))
-
-      const uniqueRows = buildUniqueRows(events, sessionMap, patientMap)
-
-      setPendingReport({ name: monthLabel, month, year, uniqueRows })
-      setReportName(monthLabel)
+      setReport({ name: monthLabel, uniqueRows: buildUniqueRows(events, sessionMap, patientMap, freshTypes) })
     } catch (err) {
-      setGenError(err.message ?? 'Error al generar reporte')
+      setError(err.message ?? 'Error al generar reporte')
     } finally {
-      setStep(0)
+      setLoading(false)
     }
   }
-
-  const handleSave = async () => {
-    if (!pendingReport || saving) return
-    setSaving(true)
-    setSaveError(null)
-    try {
-      const customName = reportName.trim() || monthLabel
-      await saveReport({ ...pendingReport, customName })
-      const updated = await getReports()
-      setSavedReports(updated)
-      setPendingReport(null)
-      setReportName('')
-    } catch (err) {
-      setSaveError(err.message ?? 'Error al guardar')
-    } finally {
-      setSaving(false)
-    }
-  }
-
-  const isGenerating = step > 0
-
-  const filteredReports = filter.trim()
-    ? savedReports.filter((r) =>
-        r.uniqueRows?.some((row) => row.patientName?.toLowerCase().includes(filter.toLowerCase()))
-      )
-    : savedReports
 
   return (
     <div className="max-w-2xl mx-auto py-8 px-4">
-      <h2 className="font-heading text-3xl text-purple mb-6">Reporte Mensual</h2>
+      <h2 className="font-heading text-3xl text-purple mb-6">Reporte de Asistencia</h2>
 
-      <div className="flex gap-3 mb-4 flex-wrap items-center">
-        <select
-          value={month}
-          onChange={(e) => setMonth(Number(e.target.value))}
-          className="border border-gray-200 rounded-xl px-3 py-2 font-body text-sm focus:outline-none focus:ring-2 focus:ring-purple/30"
-        >
-          {Array.from({ length: 12 }, (_, i) => (
-            <option key={i} value={i}>
-              {new Date(year, i).toLocaleDateString('es-CL', { month: 'long' })}
-            </option>
-          ))}
-        </select>
-        <select
-          value={year}
-          onChange={(e) => setYear(Number(e.target.value))}
-          className="border border-gray-200 rounded-xl px-3 py-2 font-body text-sm focus:outline-none focus:ring-2 focus:ring-purple/30"
-        >
-          {[now.getFullYear() - 1, now.getFullYear()].map((y) => (
-            <option key={y} value={y}>{y}</option>
-          ))}
-        </select>
+      <div className="flex items-center gap-3 mb-6 flex-wrap">
+        <div className="flex items-center bg-white border border-gray-200 rounded-2xl shadow-sm overflow-hidden">
+          <button onClick={prevMonth} className="px-4 py-3 text-purple font-bold text-lg hover:bg-purple/10 transition">‹</button>
+          <span className="px-4 py-3 font-bold text-gray-800 text-sm capitalize min-w-36 text-center">{monthLabel}</span>
+          <button onClick={nextMonth} className="px-4 py-3 text-purple font-bold text-lg hover:bg-purple/10 transition">›</button>
+        </div>
         <button
           onClick={handleGenerate}
-          disabled={isGenerating || !accessToken}
-          className="bg-purple hover:bg-purple-dark disabled:opacity-40 text-white font-bold px-6 py-2 rounded-full transition"
+          disabled={loading || !accessToken}
+          className="bg-purple hover:bg-purple-dark disabled:opacity-40 text-white font-bold px-6 py-3 rounded-2xl transition shadow-sm"
         >
-          {isGenerating ? 'Generando...' : '⚡ Generar reporte'}
+          {loading ? '⏳ Generando...' : '⚡ Generar'}
         </button>
       </div>
 
-      {isGenerating && (
-        <div className="mb-6 bg-white rounded-2xl p-4 shadow-sm">
-          <div className="flex justify-between text-xs text-gray-500 mb-2">
-            {STEPS.map((s, i) => (
-              <span key={i} className={i < step ? 'text-purple font-bold' : i === step - 1 ? 'text-purple' : ''}>
-                {i < step ? '✓ ' : ''}{s}
-              </span>
-            ))}
-          </div>
-          <div className="h-2 bg-gray-100 rounded-full overflow-hidden">
-            <div
-              className="h-full bg-purple rounded-full transition-all duration-500"
-              style={{ width: `${(step / STEPS.length) * 100}%` }}
-            />
-          </div>
-        </div>
+      {!accessToken && (
+        <p className="text-orange text-sm mb-4">Iniciá sesión con Google Calendar para generar reportes.</p>
+      )}
+      {loading && <LoadingSpinner color="text-purple" />}
+      {error && (
+        <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 mb-4 text-red-600 text-sm font-mono">{error}</div>
       )}
 
-      {genError && (
-        <div className="bg-red-50 border border-red-200 rounded-xl px-4 py-3 mb-4 text-red-600 text-sm font-mono">
-          {genError}
-        </div>
-      )}
-
-      {pendingReport && !isGenerating && (
-        <div className="mb-8 bg-teal/5 rounded-2xl border border-teal/40 p-4 shadow-sm">
+      {report && !loading && (
+        <div className="bg-teal/5 rounded-2xl border border-teal/40 p-4 shadow-sm">
           <div className="flex items-center gap-2 mb-1">
-            <span className="text-xs font-bold text-teal bg-teal/10 border border-teal/30 px-2 py-0.5 rounded-full">📝 Sin guardar</span>
-            <h3 className="font-heading text-xl text-teal">{pendingReport.name}</h3>
+            <span className="text-xs font-bold text-teal bg-teal/10 border border-teal/30 px-2 py-0.5 rounded-full">⚡ Generado ahora</span>
           </div>
-          <p className="text-xs text-gray-400 mb-4">{pendingReport.uniqueRows?.length ?? 0} paciente(s)</p>
-          <ReportTable report={pendingReport} />
-
-          <div className="mt-5 pt-4 border-t border-gray-100">
-            <p className="text-sm text-gray-600 font-bold mb-2">Nombre del reporte</p>
-            <div className="flex gap-2 flex-wrap">
-              <input
-                type="text"
-                value={reportName}
-                onChange={(e) => setReportName(e.target.value)}
-                placeholder="Ej: Julio 2026 primera quincena"
-                className="flex-1 min-w-48 border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple/30"
-              />
-              <button
-                onClick={handleSave}
-                disabled={saving}
-                className="bg-purple hover:bg-purple-dark disabled:opacity-40 text-white font-bold px-5 py-2 rounded-full transition text-sm"
-              >
-                {saving ? 'Guardando...' : '💾 Guardar reporte'}
-              </button>
-            </div>
-            {saveError && (
-              <p className="mt-2 text-red-500 text-xs font-mono">{saveError}</p>
-            )}
-          </div>
+          <h3 className="font-heading text-xl text-teal mb-1">{report.name}</h3>
+          <p className="text-xs text-gray-400 mb-4">{report.uniqueRows?.length ?? 0} paciente(s)</p>
+          <ReportTable report={report} helpers={helpers} />
         </div>
       )}
-
-      <hr className="my-6 border-gray-200" />
-
-      <div>
-        <div className="flex items-center justify-between mb-3 gap-3 flex-wrap">
-          <h3 className="font-heading text-xl text-gray-700">Historial de reportes</h3>
-          <input
-            type="text"
-            value={filter}
-            onChange={(e) => setFilter(e.target.value)}
-            placeholder="🔍 Filtrar por paciente..."
-            className="border border-gray-200 rounded-xl px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-purple/30"
-          />
-        </div>
-
-        {loadingList && <LoadingSpinner />}
-
-        {!loadingList && filteredReports.length === 0 && (
-          <p className="text-gray-400 text-sm py-4 text-center">
-            {filter ? 'Sin reportes que coincidan' : 'Aún no hay reportes guardados'}
-          </p>
-        )}
-
-        <div className="space-y-2">
-          {filteredReports.map((r) => (
-            <div key={r.id}>
-              <button
-                onClick={() => setActiveReport(activeReport?.id === r.id ? null : r)}
-                className={`w-full text-left border rounded-2xl px-4 py-3 transition flex items-center justify-between ${
-                  activeReport?.id === r.id
-                    ? 'bg-purple/5 border-purple/30'
-                    : 'bg-white hover:bg-purple/5 border-gray-200'
-                }`}
-              >
-                <div>
-                  <p className="font-bold text-gray-800 text-sm capitalize">{r.customName || r.name}</p>
-                  <p className="text-xs text-gray-400">
-                    {r.uniqueRows?.length ?? 0} paciente(s) ·{' '}
-                    {r.generatedAt?.toDate
-                      ? r.generatedAt.toDate().toLocaleDateString('es-CL', { day: 'numeric', month: 'short', year: 'numeric' })
-                      : ''}
-                  </p>
-                </div>
-                <span className="text-purple text-xs font-bold">
-                  {activeReport?.id === r.id ? '▲ Cerrar' : 'Ver →'}
-                </span>
-              </button>
-
-              {activeReport?.id === r.id && (
-                <div className="mt-2 bg-white rounded-2xl border border-purple/20 p-4">
-                  <ReportTable report={r} />
-                </div>
-              )}
-            </div>
-          ))}
-        </div>
-      </div>
     </div>
   )
 }

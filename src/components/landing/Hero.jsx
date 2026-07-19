@@ -1,28 +1,25 @@
 import { Link } from 'react-router-dom'
 import { WavyBorder } from '../ui/WavyBorder'
+import { Bubbles } from '../ui/Bubbles'
 
 export function Hero() {
   return (
-    <section className="relative bg-cream overflow-hidden pt-12 pb-0">
-      {/* Decorative blobs — flotantes */}
-      <div
-        className="absolute top-8 left-4 w-20 h-20 bg-pink/20 rounded-full blur-xl animate-float"
-        style={{ animationDelay: '0s' }}
-      />
-      <div
-        className="absolute top-16 right-6 w-28 h-28 bg-teal/20 rounded-full blur-xl animate-float-slow"
-        style={{ animationDelay: '2s' }}
-      />
-      <div
-        className="absolute bottom-16 left-8 w-16 h-16 bg-orange/20 rounded-full blur-xl animate-float-slower"
-        style={{ animationDelay: '4s' }}
-      />
+    <section
+      className="relative overflow-hidden pt-12 pb-0"
+      style={{
+        background: 'linear-gradient(135deg, #f0e8ff 0%, #fff8f0 45%, #e6f9fd 100%)',
+      }}
+    >
+      {/* Capa de profundidad: burbujas absolutas dentro de la sección */}
+      <Bubbles />
 
-      <div className="relative max-w-5xl mx-auto px-6 flex flex-col md:flex-row items-center gap-10">
-        {/* Text */}
+      {/* Contenido por encima de las burbujas */}
+      <div className="relative z-10 max-w-5xl mx-auto px-6 flex flex-col md:flex-row items-center gap-10">
+
+        {/* Texto */}
         <div
           className="flex-1 text-center md:text-left animate-fade-up"
-          style={{ animationDelay: '0.1s' }}
+          style={{ animationDelay: '0.05s' }}
         >
           <span className="text-4xl select-none">🖐️</span>
           <h1 className="font-heading text-5xl md:text-6xl text-purple leading-tight mt-2">
@@ -58,20 +55,37 @@ export function Hero() {
           </p>
         </div>
 
-        {/* Foto Valentina */}
+        {/* Foto con anillo giratorio */}
         <div
           className="flex-shrink-0 flex flex-col items-center animate-fade-up"
-          style={{ animationDelay: '0.25s' }}
+          style={{ animationDelay: '0.2s' }}
         >
           <div className="relative">
-            <div className="absolute inset-0 rounded-full bg-gradient-to-br from-purple/40 to-pink/40 scale-110 blur-md" />
+            {/* Anillo giratorio con gradiente cónico */}
+            <div
+              className="absolute rounded-full ring-spin"
+              style={{
+                inset: '-6px',
+                background: 'conic-gradient(from 0deg, rgba(124,58,237,0.8), rgba(6,182,212,0.7), rgba(236,72,153,0.8), rgba(249,115,22,0.7), rgba(124,58,237,0.8))',
+                filter: 'blur(5px)',
+              }}
+            />
+            {/* Halo exterior difuminado */}
+            <div
+              className="absolute rounded-full animate-glow-pulse"
+              style={{
+                inset: '-14px',
+                background: 'radial-gradient(circle, rgba(124,58,237,0.15) 0%, transparent 70%)',
+              }}
+            />
             <img
               src={`${import.meta.env.BASE_URL}images/valentina.png`}
               alt="Valentina Pau Roca"
-              className="relative w-56 h-56 md:w-64 md:h-64 rounded-full object-cover border-4 border-white shadow-xl"
+              className="relative w-56 h-56 md:w-64 md:h-64 rounded-full object-cover border-4 border-white shadow-2xl"
+              style={{ zIndex: 1 }}
             />
           </div>
-          <p className="text-center text-sm text-gray-400 mt-3 font-body">Valentina Pau Roca</p>
+          <p className="text-center text-sm text-gray-400 mt-4 font-body">Valentina Pau Roca</p>
           <p className="text-center text-xs text-purple font-bold font-body">Fonoaudióloga</p>
         </div>
       </div>

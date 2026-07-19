@@ -1,9 +1,12 @@
-import { useState } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { Link } from 'react-router-dom'
 import { useAuth } from '../context/AuthContext'
 import { PrivateCalendar } from '../components/calendar/PrivateCalendar'
 import { TokenRefreshBanner } from '../components/ui/TokenRefreshBanner'
 import { PatientManager } from '../components/admin/PatientManager'
+import { ServiceTypeManager } from '../components/admin/ServiceTypeManager'
+import { getServiceTypes } from '../hooks/useFirestore'
+import { setDynamicTypeMap } from '../lib/parseEvent'
 
 function toLocalDateStr(d) {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
@@ -16,6 +19,44 @@ function dateLabel(d) {
 export default function Admin() {
   const { user, signOut, accessToken } = useAuth()
   const [selectedDate, setSelectedDate] = useState(new Date())
+  const [serviceTypes, setServiceTypes] = useState([])
+
+  // Tipos detectados desde pacientes (callback de PatientManager)
+  const [detectedTypes, setDetectedTypes]     = useState([])  // ['Terapia','Test',...]
+  const [patientTypeCount, setPatientTypeCount] = useState({}) // {'Terapia': 2, 'Test': 1}
+
+  const reloadServiceTypes = useCallback(async () => {
+    try {
+      const types = await getServiceTypes()
+      setServiceTypes(types)
+      // Actualizar el mapa dinámico de parseEvent con los alias de Firestore
+      const aliasMap = {}
+      types.forEach((t) => {
+        ;(t.aliases ?? []).forEach((a) => {
+          const lower = a.toLowerCase()
+          const norm  = lower.normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+          aliasMap[lower] = t.displayName
+          aliasMap[norm]  = t.displayName   // también sin tildes
+        })
+      })
+      setDynamicTypeMap(aliasMap)
+    } catch (e) {
+      console.error('[Admin] error cargando serviceTypes:', e)
+    }
+  }, [])
+
+  useEffect(() => { reloadServiceTypes() }, [reloadServiceTypes])
+
+  // Tipos detectados que NO tienen regla definida en serviceTypes
+  const knownDisplayNames = new Set(serviceTypes.map((t) => t.displayName))
+  const unknownTypes = detectedTypes
+    .filter((t) => t && !knownDisplayNames.has(t))
+    .map((t) => ({ typeName: t, patientCount: patientTypeCount[t] ?? 0 }))
+
+  const handleTypesDetected = useCallback((types, countMap) => {
+    setDetectedTypes(types)
+    setPatientTypeCount(countMap)
+  }, [])
 
   return (
     <div className="min-h-screen bg-cream font-body">
@@ -40,7 +81,20 @@ export default function Admin() {
 
       <div className="max-w-2xl mx-auto px-4 py-6">
         <TokenRefreshBanner />
-        <PatientManager accessToken={accessToken} />
+
+        <ServiceTypeManager
+          serviceTypes={serviceTypes}
+          patientTypeCount={patientTypeCount}
+          unknownTypes={unknownTypes}
+          onReload={reloadServiceTypes}
+        />
+
+        <PatientManager
+          accessToken={accessToken}
+          serviceTypes={serviceTypes}
+          knownTypeNames={knownDisplayNames}
+          onTypesDetected={handleTypesDetected}
+        />
 
         <div className="flex flex-wrap items-center gap-3 mb-6">
           <label className="font-bold text-gray-700 text-sm">Fecha:</label>
@@ -54,7 +108,7 @@ export default function Admin() {
         </div>
 
         <h2 className="font-heading text-xl text-gray-700 mb-4">Sesiones del día</h2>
-        <PrivateCalendar selectedDate={selectedDate} />
+        <PrivateCalendar selectedDate={selectedDate} serviceTypes={serviceTypes} />
       </div>
     </div>
   )
