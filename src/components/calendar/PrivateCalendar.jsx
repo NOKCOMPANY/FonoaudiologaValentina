@@ -1,9 +1,9 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { usePrivateEvents } from '../../hooks/useCalendar'
 import { useAuth } from '../../context/AuthContext'
 import { LoadingSpinner } from '../ui/LoadingSpinner'
 import { parseEvent } from '../../lib/parseEvent'
-import { markAttendanceWithPatient } from '../../hooks/useFirestore'
+import { markAttendanceWithPatient, getSessionsInRange } from '../../hooks/useFirestore'
 import { TYPE_LABEL } from '../../lib/constants'
 
 function toLocalDateStr(d) {
@@ -22,17 +22,25 @@ const TYPE_STYLES = {
 }
 const DEFAULT_STYLE = { badge: 'bg-gray-100 text-gray-500 border-gray-200', border: 'border-l-gray-300' }
 
-function SessionCard({ event }) {
+function SessionCard({ event, existingSession }) {
   const parsed    = parseEvent(event.summary ?? '')
   const styles    = TYPE_STYLES[parsed.typeName] ?? DEFAULT_STYLE
   const typeLabel = TYPE_LABEL[parsed.typeName] ?? parsed.typeName
 
-  const [status, setStatus]       = useState(null)   // null | 'attended' | 'absent'
+  const [status, setStatus]       = useState(null)
   const [saving, setSaving]       = useState(false)
   const [saved, setSaved]         = useState(false)
   const [error, setError]         = useState(null)
   const [notes, setNotes]         = useState('')
   const [showNotes, setShowNotes] = useState(false)
+
+  useEffect(() => {
+    if (existingSession) {
+      setStatus(existingSession.attended ? 'attended' : 'absent')
+      setSaved(true)
+      setNotes(existingSession.notes ?? '')
+    }
+  }, [existingSession])
 
   const register = async (attended) => {
     if (saving) return
@@ -140,6 +148,21 @@ export function PrivateCalendar({ selectedDate }) {
   const { accessToken } = useAuth()
   const dateStr = toLocalDateStr(selectedDate)
   const { events, loading, error } = usePrivateEvents(accessToken, dateStr)
+  const [sessionMap, setSessionMap] = useState({})
+
+  useEffect(() => {
+    const dayStart = new Date(selectedDate)
+    dayStart.setHours(0, 0, 0, 0)
+    const dayEnd = new Date(selectedDate)
+    dayEnd.setHours(23, 59, 59, 999)
+    getSessionsInRange(dayStart, dayEnd)
+      .then((sessions) => {
+        const map = {}
+        sessions.forEach((s) => { map[s.calendarEventId] = s })
+        setSessionMap(map)
+      })
+      .catch(() => {})
+  }, [selectedDate])
 
   if (loading) return <LoadingSpinner />
   if (error) return (
@@ -161,7 +184,7 @@ export function PrivateCalendar({ selectedDate }) {
   return (
     <div className="space-y-3">
       {events.map((event) => (
-        <SessionCard key={event.id} event={event} />
+        <SessionCard key={event.id} event={event} existingSession={sessionMap[event.id]} />
       ))}
     </div>
   )

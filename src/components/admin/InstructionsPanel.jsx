@@ -7,9 +7,9 @@ const TYPES = [
 ]
 
 const EXAMPLES = [
-  'BS - Martina López',
-  'Terapia - Sebastián Roa',
-  'Taller - Emilia Vargas',
+  'BS Martina López',
+  'Terapia Sebastián Roa',
+  'Taller Emilia Vargas',
 ]
 
 export function InstructionsPanel() {
@@ -32,8 +32,9 @@ export function InstructionsPanel() {
           <div>
             <p className="font-bold text-gray-800 mb-1">Formato del nombre en Google Calendar:</p>
             <code className="bg-gray-100 rounded-lg px-3 py-2 block text-sm text-gray-700">
-              [Tipo] - [Nombre del niño]
+              Tipo Nombre del niño
             </code>
+            <p className="text-xs text-gray-500 mt-1">El guión es opcional — también funciona <span className="font-mono">BS - Martina</span></p>
           </div>
 
           <div>

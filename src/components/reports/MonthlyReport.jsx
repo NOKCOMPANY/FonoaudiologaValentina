@@ -26,6 +26,12 @@ function displayType(type) {
   return TYPE_LABEL[type] ?? type ?? '—'
 }
 
+const SERVICE_KEYS = ['Babysitter', 'Terapia', 'Taller']
+
+function emptyTypeCounts() {
+  return Object.fromEntries(SERVICE_KEYS.map((k) => [k, { total: 0, attended: 0, absent: 0 }]))
+}
+
 // Construye la tabla de pacientes únicos a partir de los eventos del calendario
 function buildUniqueRows(events, sessionMap, patientMap) {
   const byPatient = {}
@@ -34,16 +40,24 @@ function buildUniqueRows(events, sessionMap, patientMap) {
     const parsed  = parseEvent(ev.summary ?? '')
     const sess    = sessionMap[ev.id]
     const pid     = parsed.patientId || sess?.patientId || 'sin-registrar'
-    const type    = parsed.typeName || 'Sin clasificar'   // fuente de verdad = título del evento
+    const type    = parsed.typeName || 'Sin clasificar'
     const name    = parsed.patientName || patientMap[pid]?.name || ev.summary || 'Sin registrar'
 
     if (!byPatient[pid]) {
-      byPatient[pid] = { patientName: name, types: new Set(), total: 0, attended: 0, absent: 0 }
+      byPatient[pid] = { patientName: name, types: new Set(), total: 0, attended: 0, absent: 0, typeCounts: emptyTypeCounts() }
     }
     byPatient[pid].types.add(type)
     byPatient[pid].total++
+    if (byPatient[pid].typeCounts[type]) {
+      byPatient[pid].typeCounts[type].total++
+    }
     if (sess?.attended !== undefined) {
       sess.attended ? byPatient[pid].attended++ : byPatient[pid].absent++
+      if (byPatient[pid].typeCounts[type]) {
+        sess.attended
+          ? byPatient[pid].typeCounts[type].attended++
+          : byPatient[pid].typeCounts[type].absent++
+      }
     }
   })
 
@@ -54,7 +68,73 @@ function buildUniqueRows(events, sessionMap, patientMap) {
     attended: r.attended,
     absent: r.absent,
     pct: r.total > 0 ? Math.round((r.attended / r.total) * 100) : 0,
+    typeCounts: r.typeCounts,
   }))
+}
+
+function exportPatientCSV(row) {
+  const lines = ['Servicio,Agendadas,Asistidas,Ausentes']
+  SERVICE_KEYS.forEach((key) => {
+    const tc = row.typeCounts?.[key]
+    if (tc && tc.total > 0) {
+      lines.push(`"${displayType(key)} fonoaudiológico",${tc.total},${tc.attended},${tc.absent}`)
+    }
+  })
+  lines.push(`Total,${row.total},${row.attended},${row.absent}`)
+  const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8;' })
+  const url  = URL.createObjectURL(blob)
+  const a    = document.createElement('a')
+  a.href     = url
+  a.download = `paciente-${row.patientName.replace(/\s+/g, '-')}.csv`
+  a.click()
+  URL.revokeObjectURL(url)
+}
+
+function exportPatientPDF(row) {
+  const doc    = new jsPDF()
+  const purple = [124, 58, 237]
+
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(16)
+  doc.setTextColor(...purple)
+  doc.text(row.patientName, 14, 20)
+
+  const serviceRows = SERVICE_KEYS
+    .filter((key) => row.typeCounts?.[key]?.total > 0)
+    .map((key) => {
+      const tc = row.typeCounts[key]
+      return [displayType(key), tc.total, tc.attended, tc.absent]
+    })
+  serviceRows.push(['Total', row.total, row.attended, row.absent])
+
+  autoTable(doc, {
+    startY: 28,
+    head: [['Servicio', 'Agendadas', 'Asistidas', 'Ausentes']],
+    body: serviceRows,
+    headStyles: { fillColor: purple, fontStyle: 'bold' },
+    alternateRowStyles: { fillColor: [253, 248, 240] },
+    styles: { fontSize: 10, cellPadding: 4 },
+  })
+
+  doc.save(`paciente-${row.patientName.replace(/\s+/g, '-')}.pdf`)
+}
+
+function exportFullCSV(rows, name) {
+  const header = ['Paciente', ...SERVICE_KEYS.flatMap((k) => [`${k} agendadas`, `${k} asistidas`]), 'Total agendadas', 'Total asistidas', '%'].join(',')
+  const body = rows.map((r) => {
+    const typeCols = SERVICE_KEYS.flatMap((k) => {
+      const tc = r.typeCounts?.[k] ?? { total: 0, attended: 0 }
+      return [tc.total, tc.attended]
+    })
+    return [`"${r.patientName}"`, ...typeCols, r.total, r.attended, `${r.pct}%`].join(',')
+  }).join('\n')
+  const blob = new Blob([header + '\n' + body], { type: 'text/csv;charset=utf-8;' })
+  const url  = URL.createObjectURL(blob)
+  const a    = document.createElement('a')
+  a.href     = url
+  a.download = `reporte-completo-${name}.csv`
+  a.click()
+  URL.revokeObjectURL(url)
 }
 
 function exportCSV(rows, name) {
@@ -123,7 +203,7 @@ function ReportTable({ report }) {
         <table className="w-full text-sm font-body">
           <thead className="bg-purple text-white">
             <tr>
-              {['Paciente', 'Servicios', 'Agendadas', 'Asistidas', 'Ausentes', '%'].map((h) => (
+              {['Paciente', 'Servicios', 'Agendadas', 'Asistidas', 'Ausentes', '%', 'Descargar'].map((h) => (
                 <th key={h} className="py-3 px-4 text-left font-bold whitespace-nowrap">{h}</th>
               ))}
             </tr>
@@ -152,6 +232,22 @@ function ReportTable({ report }) {
                     {r.pct}%
                   </span>
                 </td>
+                <td className="py-3 px-4 text-center whitespace-nowrap">
+                  <button
+                    onClick={() => exportPatientCSV(r)}
+                    className="bg-teal/10 hover:bg-teal/20 text-teal border border-teal/30 text-xs font-bold px-2 py-1 rounded-full transition mr-1"
+                    title="CSV de este paciente"
+                  >
+                    CSV
+                  </button>
+                  <button
+                    onClick={() => exportPatientPDF(r)}
+                    className="bg-purple/10 hover:bg-purple/20 text-purple border border-purple/30 text-xs font-bold px-2 py-1 rounded-full transition"
+                    title="PDF de este paciente"
+                  >
+                    PDF
+                  </button>
+                </td>
               </tr>
             ))}
           </tbody>
@@ -170,6 +266,12 @@ function ReportTable({ report }) {
           className="bg-purple hover:bg-purple/80 text-white font-bold py-2.5 px-5 rounded-full transition text-sm"
         >
           📄 Exportar PDF
+        </button>
+        <button
+          onClick={() => exportFullCSV(uniqueRows, displayName)}
+          className="bg-orange hover:bg-orange/80 text-white font-bold py-2.5 px-5 rounded-full transition text-sm"
+        >
+          📊 CSV completo (todos los pacientes)
         </button>
       </div>
     </div>
