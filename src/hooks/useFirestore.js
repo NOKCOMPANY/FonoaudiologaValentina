@@ -11,14 +11,20 @@ function requireAuth() {
   return user
 }
 
-export async function markAttendanceWithPatient(calendarEventId, patientId, patientName, attended, notes = '', type = '') {
+// eventDateISO: ISO string del inicio del evento en el calendario (ej: "2026-07-04T09:00:00-04:00")
+// La fecha del evento determina en qué día aparece la sesión — no cuándo fue registrada.
+export async function markAttendanceWithPatient(calendarEventId, patientId, patientName, attended, notes = '', type = '', eventDateISO = null) {
   const user = requireAuth()
   console.log('[Firestore] escribiendo como:', user.email, '| patientId:', patientId)
+  // Usamos la fecha del evento como date — así getSessionsInRange filtra correctamente por día
+  const eventDate = eventDateISO
+    ? Timestamp.fromDate(new Date(eventDateISO))
+    : Timestamp.now()
   await withTimeout(
     Promise.all([
       setDoc(doc(db, 'patients', patientId), { name: patientName }, { merge: true }),
       setDoc(doc(db, 'sessions', calendarEventId), {
-        patientId, calendarEventId, date: Timestamp.now(), attended, notes, type,
+        patientId, calendarEventId, date: eventDate, attended, notes, type,
       }, { merge: true }),
     ]),
     15000, 'guardar asistencia'

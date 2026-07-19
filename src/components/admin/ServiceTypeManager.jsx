@@ -36,9 +36,13 @@ function TypeForm({ initial, onSave, onCancel, saving }) {
     })
   }
 
+  // El formulario toma el color actualmente seleccionado
+  const formBadge  = colorVariant(color, 'badge')   // borde + bg suave
+  const formText   = colorVariant(color, 'text')     // color del título
+
   return (
-    <div className="bg-purple/5 border border-purple/20 rounded-2xl p-4 space-y-3">
-      <p className="text-xs font-bold text-purple">{initial ? '✎ Editar tipo' : '+ Nuevo tipo de servicio'}</p>
+    <div className={`border-l-4 bg-gray-50 border rounded-2xl p-4 space-y-3 transition-all ${colorVariant(color, 'border')}`}>
+      <p className={`text-xs font-bold ${formText}`}>{initial ? '✎ Editar tipo' : '+ Nuevo tipo de servicio'}</p>
 
       <div>
         <label className="text-xs font-bold text-gray-500 mb-1 block">Nombre del tipo</label>
@@ -163,7 +167,7 @@ function TypeForm({ initial, onSave, onCancel, saving }) {
         <button
           onClick={handleSubmit}
           disabled={saving || !displayName.trim()}
-          className="text-xs bg-purple hover:bg-purple-dark disabled:opacity-40 text-white font-bold px-4 py-1.5 rounded-full transition"
+          className={`text-xs disabled:opacity-40 text-white font-bold px-4 py-1.5 rounded-full transition ${colorVariant(color, 'dot')}`}
         >
           {saving ? '⏳' : '💾 Guardar'}
         </button>

@@ -59,7 +59,10 @@ function SessionCard({ event, existingSession, serviceTypes = [] }) {
     setSaving(true)
     setError(null)
     try {
-      await markAttendanceWithPatient(event.id, parsed.patientId, parsed.patientName, attended, notes, currentType)
+      await markAttendanceWithPatient(
+        event.id, parsed.patientId, parsed.patientName, attended, notes, currentType,
+        event.start?.dateTime ?? event.start?.date ?? null
+      )
       setStatus(attended ? 'attended' : 'absent')
       setSaved(true)
       setEditing(false)

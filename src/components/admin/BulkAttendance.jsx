@@ -103,7 +103,7 @@ export function BulkAttendance({ accessToken, serviceTypes = [], patients = [], 
     await Promise.allSettled(
       toSave.map(async (s) => {
         try {
-          await markAttendanceWithPatient(s.eventId, s.patientId, s.patientName, s.status, '', s.type)
+          await markAttendanceWithPatient(s.eventId, s.patientId, s.patientName, s.status, '', s.type, s.startISO)
           ok++
         } catch {
           fail++
