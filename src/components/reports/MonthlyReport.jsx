@@ -246,17 +246,10 @@ async function exportPatientPDF(row, reportName, recargoRules) {
   const estTableH     = 9 + (typeEntries.length + 1) * 8
   const estCardH      = 14 + estTableH + 4 + metricsH + 4
 
-  // Capa exterior de glow (simula difuminado morado)
-  doc.setFillColor(232, 222, 255)
-  doc.roundedRect(10, y - 3, 190, estCardH + 6, 6, 6, 'F')
-  doc.setFillColor(239, 232, 255)
-  doc.roundedRect(11.5, y - 2, 187, estCardH + 4, 5, 5, 'F')
-  doc.setFillColor(245, 240, 255)
-  doc.roundedRect(13, y - 1, 184, estCardH + 2, 4, 4, 'F')
-  // Card principal — blanco hueso con borde morado suave
-  doc.setFillColor(252, 250, 255)
-  doc.setDrawColor(200, 178, 245)
-  doc.setLineWidth(0.4)
+  // Card principal — lavanda muy claro con borde morado sutil
+  doc.setFillColor(247, 243, 255)
+  doc.setDrawColor(190, 165, 235)
+  doc.setLineWidth(0.5)
   doc.roundedRect(14, y, 182, estCardH, 3, 3, 'FD')
 
   // Título de la sección dentro del card
@@ -312,7 +305,7 @@ async function exportPatientPDF(row, reportName, recargoRules) {
   y = doc.lastAutoTable.finalY + 4
 
   // Tira de métricas clave al pie del card
-  doc.setFillColor(220, 205, 255)
+  doc.setFillColor(235, 226, 255)
   doc.roundedRect(16, y, 178, metricsH, 2, 2, 'F')
   const metricItems = [
     { val: String(row.total),            label: 'agendadas'   },
