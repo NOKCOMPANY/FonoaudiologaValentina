@@ -180,8 +180,8 @@ export async function deleteServiceType(id) {
 // ── Reglas de recargo por horario ─────────────────────────────────────────────
 
 const DEFAULT_RECARGO_RULES_FS = {
-  fds:            { desdeDia: 5, desdeHora: 20 },
-  fueraDeHorario: { hora: 20 },
+  fds:            { desdeDia: 5, desdeHora: 20, hastaDia: 0, hastaHora: 23 },
+  fueraDeHorario: { hora: 20, hastaHora: 23 },
 }
 
 export async function getRecargoRules() {
