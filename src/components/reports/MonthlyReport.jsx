@@ -238,30 +238,20 @@ async function exportPatientPDF(row, reportName, recargoRules) {
   doc.line(14, y + 1, 196, y + 1)
   y += 7
 
-  // ── Resumen por tipo de servicio — marco simple con tabla suavizada ──────
+  // ── Resumen por tipo de servicio ─────────────────────────────────────────
   const typeEntries = Object.entries(row.typeCounts).filter(([, tc]) => tc.total > 0)
-  const estTableH   = 9 + (typeEntries.length + 1) * 8
-  const estFrameH   = 14 + estTableH + 6
 
-  // Marco/recuadro simple — sin relleno, solo borde morado suave
-  doc.setFillColor(250, 247, 255)
-  doc.setDrawColor(195, 170, 238)
-  doc.setLineWidth(0.6)
-  doc.roundedRect(14, y, 182, estFrameH, 3, 3, 'FD')
-
-  // Título dentro del marco
+  // Título encima del marco
   doc.setFillColor(...purpleL)
-  doc.rect(14, y, 4, 10, 'F')
+  doc.rect(14, y, 4, 5, 'F')
   doc.setFont('helvetica', 'bold')
   doc.setFontSize(9.5)
   doc.setTextColor(...purpleL)
-  doc.text('Resumen por tipo de servicio', 21, y + 6.5)
-  doc.setDrawColor(210, 190, 245)
-  doc.setLineWidth(0.2)
-  doc.line(14, y + 11, 196, y + 11)
-  y += 14
+  doc.text('Resumen por tipo de servicio', 21, y + 4)
+  y += 9
 
-  // Tabla suavizada dentro del marco
+  // Tabla — guardamos el startY para dibujar el marco redondeado encima después
+  const tableStartY = y
   const serviceRows = typeEntries.map(([type, tc]) => [
     type,
     tc.total,
@@ -278,22 +268,21 @@ async function exportPatientPDF(row, reportName, recargoRules) {
   ])
 
   autoTable(doc, {
-    startY: y,
-    margin: { left: 16, right: 16 },
+    startY: tableStartY,
     head: [['Servicio', 'Agendadas', 'Completadas', 'No efectuadas', 'Monto Bruto']],
     body: serviceRows,
     headStyles: {
-      fillColor: [195, 170, 238],
+      fillColor: [180, 150, 232],
       fontStyle: 'bold', fontSize: 9,
-      textColor: [55, 20, 110],
+      textColor: [255, 255, 255],
     },
     alternateRowStyles: { fillColor: [252, 249, 255] },
     styles: {
       fontSize: 9, cellPadding: 4,
       textColor: [55, 35, 80],
-      fillColor: [250, 247, 255],
-      lineColor: [220, 205, 240],
-      lineWidth: 0.15,
+      fillColor: [255, 255, 255],
+      lineColor: [225, 210, 245],
+      lineWidth: 0.2,
     },
     columnStyles: {
       1: { halign: 'center' },
@@ -309,7 +298,26 @@ async function exportPatientPDF(row, reportName, recargoRules) {
       }
     },
   })
-  y = doc.lastAutoTable.finalY + 8
+
+  // Marco redondeado dibujado sobre la tabla — solo borde, sin relleno
+  // cubre las esquinas rectangulares de la tabla con el color de fondo
+  const tableEndY = doc.lastAutoTable.finalY
+  const frameH    = tableEndY - tableStartY
+  const r         = 3
+  const pageW     = doc.internal.pageSize.getWidth()
+  const bgColor   = [255, 255, 255]
+  // Esquinas — pequeños cuadrados del color de fondo para tapar las esquinas rectas
+  doc.setFillColor(...bgColor)
+  doc.rect(14, tableStartY, r, r, 'F')
+  doc.rect(pageW - 14 - r, tableStartY, r, r, 'F')
+  doc.rect(14, tableEndY - r, r, r, 'F')
+  doc.rect(pageW - 14 - r, tableEndY - r, r, r, 'F')
+  // Borde redondeado encima
+  doc.setDrawColor(185, 158, 232)
+  doc.setLineWidth(0.7)
+  doc.roundedRect(14, tableStartY, 182, frameH, r, r, 'D')
+
+  y = tableEndY + 8
 
   // ── Nota "No efectuada" — caja info centrada con icono circular ──────────
   const noteH  = 20
