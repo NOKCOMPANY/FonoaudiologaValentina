@@ -47,12 +47,18 @@ export function Hero() {
           </p>
         </div>
 
-        {/* Avatar placeholder */}
-        <div className="flex-shrink-0">
-          <div className="w-56 h-56 md:w-72 md:h-72 rounded-full bg-gradient-to-br from-purple/30 to-pink/30 border-4 border-purple/40 flex items-center justify-center shadow-xl">
-            <span className="text-8xl">👩‍⚕️</span>
+        {/* Foto Valentina */}
+        <div className="flex-shrink-0 flex flex-col items-center">
+          <div className="relative">
+            <div className="absolute inset-0 rounded-full bg-gradient-to-br from-purple/40 to-pink/40 scale-110 blur-md" />
+            <img
+              src={`${import.meta.env.BASE_URL}images/valentina.png`}
+              alt="Valentina Pau Roca"
+              className="relative w-56 h-56 md:w-64 md:h-64 rounded-full object-cover border-4 border-white shadow-xl"
+            />
           </div>
-          <p className="text-center text-sm text-gray-400 mt-2 font-body">Valentina Pau Roca</p>
+          <p className="text-center text-sm text-gray-400 mt-3 font-body">Valentina Pau Roca</p>
+          <p className="text-center text-xs text-purple font-bold font-body">Fonoaudióloga</p>
         </div>
       </div>
 

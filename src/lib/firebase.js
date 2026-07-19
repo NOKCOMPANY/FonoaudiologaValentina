@@ -1,8 +1,13 @@
 import { initializeApp } from 'firebase/app'
-import { getFirestore } from 'firebase/firestore'
+import { initializeFirestore } from 'firebase/firestore'
 import { getAuth } from 'firebase/auth'
 import { config } from './config'
 
 const app = initializeApp(config.firebase)
-export const db = getFirestore(app)
+
+// experimentalForceLongPolling: fuerza HTTP en vez de WebSocket
+// Soluciona casos donde el WebSocket de Firestore queda bloqueado silenciosamente
+export const db   = initializeFirestore(app, {
+  experimentalForceLongPolling: true,
+}, 'vale')
 export const auth = getAuth(app)

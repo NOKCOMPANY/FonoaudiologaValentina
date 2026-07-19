@@ -8,14 +8,10 @@ const services = [
       'Sesiones estructuradas de 3 horas para potenciar el desarrollo integral de tu hijo/a a través de actividades y juegos personalizados según su edad, necesidades e intereses.',
     badges: ['Incluye materiales', 'Informe escrito', '3 horas'],
     ideal: 'Ideal para estimulación temprana',
-    prices: {
-      weekday: '$37.500',
-      weekend: 'A consultar',
-    },
+    prices: { weekday: '$37.500', weekend: 'A consultar' },
     bg: 'bg-orange',
-    badgeBg: 'bg-orange/20 text-orange-800',
-    border: 'border-orange/30',
-    textLight: 'text-orange-50',
+    photo: 'taller.jpg',
+    photoAlt: 'Sesión de taller educativo con materiales didácticos',
   },
   {
     emoji: '🧸',
@@ -24,14 +20,10 @@ const services = [
       'Cuidado y acompañamiento seguro respetando los ritmos, intereses y rutinas de tu hijo/a. Con actividades de estimulación integradas a la rutina diaria.',
     badges: ['Mínimo 1 hora', 'A domicilio', 'Pago por hora'],
     ideal: 'Ideal para cuidado con intención terapéutica',
-    prices: {
-      weekday: '$10.000/hr · $12.500/hr +20:00',
-      weekend: 'A consultar',
-    },
+    prices: { weekday: '$10.000/hr · $12.500/hr +20:00', weekend: 'A consultar' },
     bg: 'bg-teal',
-    badgeBg: 'bg-teal/20 text-teal-800',
-    border: 'border-teal/30',
-    textLight: 'text-teal-50',
+    photo: 'babysitter.jpg',
+    photoAlt: 'Sesión de babysitter fonoaudiológico',
   },
   {
     emoji: '🗣️',
@@ -40,14 +32,10 @@ const services = [
       'Evaluación y tratamiento personalizado del lenguaje, habla y comunicación. Sesiones diseñadas para acompañar a cada niño/a según sus necesidades específicas.',
     badges: ['Evaluación inicial', 'Plan personalizado', 'Seguimiento'],
     ideal: 'Ideal para dificultades de lenguaje y habla',
-    prices: {
-      weekday: 'A consultar',
-      weekend: 'A consultar',
-    },
+    prices: { weekday: 'A consultar', weekend: 'A consultar' },
     bg: 'bg-purple',
-    badgeBg: 'bg-purple/20 text-purple-800',
-    border: 'border-purple/30',
-    textLight: 'text-purple-50',
+    photo: 'terapia.jpg',
+    photoAlt: 'Sesión de terapia fonoaudiológica',
   },
 ]
 
@@ -62,14 +50,25 @@ function PriceRow({ label, value }) {
 
 function ServiceCard({ service }) {
   return (
-    <div className={`${service.bg} rounded-3xl p-6 shadow-xl flex flex-col gap-4 relative overflow-hidden`}>
+    <div className={`${service.bg} rounded-3xl shadow-xl flex flex-col overflow-hidden`}>
+      {/* Foto de ejemplo */}
+      <div className="relative h-44 overflow-hidden">
+        <img
+          src={`${import.meta.env.BASE_URL}images/${service.photo}`}
+          alt={service.photoAlt}
+          className="w-full h-full object-cover"
+        />
+        <div className="absolute inset-0 bg-black/20" />
+        <span className="absolute top-3 left-3 text-4xl drop-shadow">{service.emoji}</span>
+      </div>
+
+      <div className="p-6 relative flex flex-col gap-4">
       {/* Background decoration */}
       <div className="absolute -top-6 -right-6 w-24 h-24 bg-white/10 rounded-full" />
       <div className="absolute -bottom-4 -left-4 w-16 h-16 bg-white/10 rounded-full" />
 
       <div className="relative">
-        <span className="text-5xl">{service.emoji}</span>
-        <h3 className="font-heading text-white text-2xl mt-2">{service.title}</h3>
+        <h3 className="font-heading text-white text-2xl">{service.title}</h3>
         <p className="font-body text-white/90 text-sm mt-1 leading-relaxed">{service.description}</p>
 
         <p className="font-body text-white/70 text-xs mt-3 italic">{service.ideal}</p>
@@ -89,6 +88,7 @@ function ServiceCard({ service }) {
           <PriceRow label="Lunes – Viernes" value={service.prices.weekday} />
           <PriceRow label="Sábado – Domingo" value={service.prices.weekend} />
         </div>
+      </div>
       </div>
     </div>
   )

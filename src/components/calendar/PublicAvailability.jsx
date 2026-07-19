@@ -86,9 +86,10 @@ export function PublicAvailability() {
 
       {loading && <LoadingSpinner color="text-purple" />}
       {error && (
-        <p className="text-center text-red-500 py-8 px-4">
-          No se pudo cargar la disponibilidad. Intenta más tarde.
-        </p>
+        <div className="mx-4 mt-4 bg-red-50 border border-red-200 rounded-2xl p-4 text-sm text-red-700">
+          <p className="font-bold mb-1">No se pudo cargar la disponibilidad</p>
+          <p className="text-xs text-red-500">{error.message}</p>
+        </div>
       )}
 
       {!loading && !error && (

@@ -21,24 +21,25 @@ export function usePublicAvailability(weekStart) {
   return { busy, loading, error }
 }
 
-export function usePrivateEvents(accessToken, date) {
+// dateStr debe ser 'YYYY-MM-DD' en hora local — nunca usar toISOString() para construirlo
+export function usePrivateEvents(accessToken, dateStr) {
   const [events, setEvents]   = useState([])
   const [loading, setLoading] = useState(false)
   const [error, setError]     = useState(null)
 
   useEffect(() => {
-    if (!accessToken || !date) return
-    const start = new Date(date)
-    start.setHours(0, 0, 0, 0)
-    const end = new Date(date)
-    end.setHours(23, 59, 59, 999)
+    if (!accessToken || !dateStr) return
+    // Construir límites en hora local para evitar desfase de timezone
+    const [year, month, day] = dateStr.split('-').map(Number)
+    const start = new Date(year, month - 1, day, 0, 0, 0, 0)
+    const end   = new Date(year, month - 1, day, 23, 59, 59, 999)
     setLoading(true)
     setError(null)
     getPrivateEvents(accessToken, start.toISOString(), end.toISOString())
       .then((data) => setEvents(data.items ?? []))
       .catch(setError)
       .finally(() => setLoading(false))
-  }, [accessToken, date])
+  }, [accessToken, dateStr])
 
   return { events, loading, error }
 }

@@ -1,10 +1,18 @@
 import { config } from './config'
 
 const BASE = 'https://www.googleapis.com/calendar/v3'
+const TIMEOUT_MS = 12000
 
-// Public: FreeBusy query — nunca expone nombres de pacientes
+function fetchWithTimeout(url, options = {}) {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), TIMEOUT_MS)
+  return fetch(url, { ...options, signal: controller.signal })
+    .finally(() => clearTimeout(timer))
+}
+
+// Public: FreeBusy — nunca expone nombres de pacientes
 export async function getPublicFreeBusy(timeMin, timeMax) {
-  const res = await fetch(`${BASE}/freeBusy?key=${config.googleApiKey}`, {
+  const res = await fetchWithTimeout(`${BASE}/freeBusy?key=${config.googleApiKey}`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
@@ -13,12 +21,19 @@ export async function getPublicFreeBusy(timeMin, timeMax) {
       items: [{ id: config.calendarId }],
     }),
   })
-  if (!res.ok) throw new Error(`FreeBusy error: ${res.status}`)
+  if (!res.ok) throw new Error(`FreeBusy ${res.status}`)
   const data = await res.json()
-  return data.calendars?.[config.calendarId]?.busy ?? []
+  const cal  = data.calendars?.[config.calendarId]
+  if (cal?.errors?.length) {
+    throw new Error(
+      `El calendario no está accesible públicamente (${cal.errors[0].reason}). ` +
+      `Activa "Ver solo disponible/ocupado" en los permisos del calendario de Google.`
+    )
+  }
+  return cal?.busy ?? []
 }
 
-// Private: lista eventos completos con nombres (requiere access token OAuth)
+// Private: eventos con nombres completos (requiere access token OAuth)
 export async function getPrivateEvents(accessToken, timeMin, timeMax) {
   const params = new URLSearchParams({
     timeMin,
@@ -26,10 +41,13 @@ export async function getPrivateEvents(accessToken, timeMin, timeMax) {
     singleEvents: 'true',
     orderBy: 'startTime',
   })
-  const res = await fetch(
+  const res = await fetchWithTimeout(
     `${BASE}/calendars/${encodeURIComponent(config.calendarId)}/events?${params}`,
     { headers: { Authorization: `Bearer ${accessToken}` } }
   )
-  if (!res.ok) throw new Error(`Calendar events error: ${res.status}`)
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}))
+    throw new Error(body?.error?.message ?? `Calendar API ${res.status}`)
+  }
   return res.json()
 }
