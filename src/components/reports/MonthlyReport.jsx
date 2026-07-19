@@ -291,23 +291,39 @@ async function exportPatientPDF(row, reportName, recargoRules) {
   })
   y = doc.lastAutoTable.finalY + 5
 
-  // ── Nota "No efectuada" entre tablas — estilo info sutil morado claro ─────
-  const noteH = 14
+  // ── Nota "No efectuada" — caja info centrada con icono circular ──────────
+  const noteH  = 20
+  const noteY  = y
   doc.setFillColor(248, 245, 255)
   doc.setDrawColor(210, 190, 245)
   doc.setLineWidth(0.25)
-  doc.roundedRect(14, y, 182, noteH, 2, 2, 'FD')
+  doc.roundedRect(14, noteY, 182, noteH, 3, 3, 'FD')
+  // barra izquierda
   doc.setFillColor(167, 139, 250)
-  doc.roundedRect(14, y, 3, noteH, 1, 1, 'F')
+  doc.roundedRect(14, noteY, 3, noteH, 1.5, 1.5, 'F')
+  // icono circular info centrado verticalmente
+  const iconCX = 25
+  const iconCY = noteY + noteH / 2
+  doc.setFillColor(167, 139, 250)
+  doc.circle(iconCX, iconCY, 3.8, 'F')
+  doc.setFont('helvetica', 'bolditalic')
+  doc.setFontSize(9)
+  doc.setTextColor(255, 255, 255)
+  doc.text('i', iconCX, iconCY + 1.2, { align: 'center' })
+  // texto centrado verticalmente
+  const textX  = 33
+  const line1Y = noteY + noteH / 2 - 3.5
+  const line2Y = noteY + noteH / 2 + 1.5
+  const line3Y = noteY + noteH / 2 + 5.5
   doc.setFont('helvetica', 'bold')
   doc.setFontSize(7.5)
-  doc.setTextColor(130, 110, 160)
-  doc.text('(i)  Agenda no efectuada:', 20, y + 5)
+  doc.setTextColor(110, 85, 150)
+  doc.text('Agenda no efectuada:', textX, line1Y)
   doc.setFont('helvetica', 'normal')
-  doc.setFontSize(7.5)
+  doc.setFontSize(7.2)
   doc.setTextColor(130, 110, 160)
-  doc.text('Sesion registrada en el calendario que no pudo realizarse (inasistencia, cancelacion o', 20, y + 9.5)
-  doc.text('reprogramacion). Queda registrada para trazabilidad pero no genera cobro adicional.', 20, y + 13)
+  doc.text('Sesion registrada en el calendario que no pudo realizarse (inasistencia, cancelacion o', textX, line2Y)
+  doc.text('reprogramacion). Queda registrada para trazabilidad pero no genera cobro adicional.', textX, line3Y)
   y += noteH + 6
 
   // ── Separador sección detalle ─────────────────────────────────────────────
