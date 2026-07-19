@@ -238,10 +238,10 @@ async function exportPatientPDF(row, reportName, recargoRules) {
   doc.line(14, y + 1, 196, y + 1)
   y += 7
 
-  // ── Resumen por tipo de servicio — tabla principal con marco y blur ───────
+  // ── Resumen por tipo de servicio — diseño manual (sin autoTable) ─────────
   const typeEntries = Object.entries(row.typeCounts).filter(([, tc]) => tc.total > 0)
 
-  // Título encima del marco
+  // Título
   doc.setFillColor(...purpleL)
   doc.rect(14, y, 4, 5, 'F')
   doc.setFont('helvetica', 'bold')
@@ -250,76 +250,101 @@ async function exportPatientPDF(row, reportName, recargoRules) {
   doc.text('Resumen por tipo de servicio', 21, y + 4)
   y += 9
 
-  // Estimación de altura para dibujar blur + fondo ANTES de la tabla
-  const estH        = 10 + (typeEntries.length + 1) * 8.5 + 6
-  const tableStartY = y
-  const FRAME_BG    = [242, 235, 255]  // lavanda media — fondo del marco
+  // Layout de columnas (total 182mm, x=14…196)
+  const LM   = 14
+  const R    = 3
+  const HDR  = 10   // altura header
+  const ROW  = 9    // altura fila
+  const TOT  = 10   // altura fila total
+  // x inicio de cada columna
+  const CX = [LM, 79, 102, 130, 160]   // Servicio|Agend|Compl|NoEf|Monto
+  const CW = [65,  23,  28,  30,  36]
 
-  // Blur: una sola capa exterior muy suave
-  doc.setFillColor(232, 220, 255)
-  doc.roundedRect(11, y - 2, 188, estH + 4, 6, 6, 'F')
+  // ── Header ──────────────────────────────────────────────────────────────
+  // fondo morado oscuro con esquinas redondeadas arriba
+  doc.setFillColor(76, 29, 149)
+  doc.roundedRect(LM, y, 182, HDR, R, R, 'F')
+  doc.setFillColor(76, 29, 149)
+  doc.rect(LM, y + HDR - R, 182, R, 'F')          // anula esquinas redondeadas abajo
 
-  // Fondo del marco — la tabla se dibujará encima con margen lateral de 3mm
-  // → las esquinas redondeadas quedan expuestas naturalmente (sin cuadrados blancos)
-  doc.setFillColor(...FRAME_BG)
-  doc.roundedRect(14, y, 182, estH, 4, 4, 'F')
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(8)
+  doc.setTextColor(255, 255, 255)
+  const hdrLabels = ['Servicio', 'Agendadas', 'Completadas', 'No efectuadas', 'Monto Bruto']
+  hdrLabels.forEach((lbl, i) => {
+    if (i === 0) doc.text(lbl, CX[0] + 9, y + 6.5)
+    else if (i === 4) doc.text(lbl, CX[4] + CW[4] - 1, y + 6.5, { align: 'right' })
+    else doc.text(lbl, CX[i] + CW[i] / 2, y + 6.5, { align: 'center' })
+  })
+  y += HDR
 
-  const serviceRows = typeEntries.map(([type, tc]) => [
-    type,
-    tc.total,
-    tc.attended,
-    tc.absent,
-    tc.montoAgendado > 0 ? formatCLP(tc.montoAgendado) : '—',
-  ])
-  serviceRows.push([
-    'TOTAL',
-    row.total,
-    row.attended,
-    row.absent,
-    row.montoTotal > 0 ? formatCLP(row.montoTotal) : '—',
-  ])
+  // ── Filas de servicio ────────────────────────────────────────────────────
+  typeEntries.forEach(([type, tc], rowIdx) => {
+    const alt = rowIdx % 2 !== 0
+    doc.setFillColor(...(alt ? [248, 244, 255] : [255, 255, 255]))
+    doc.rect(LM, y, 182, ROW, 'F')
 
-  // Tabla con margen lateral de 3mm → deja ver el fondo del marco en las esquinas
-  autoTable(doc, {
-    startY: tableStartY,
-    margin: { left: 17, right: 17 },
-    head: [['Servicio', 'Agendadas', 'Completadas', 'No efectuadas', 'Monto Bruto']],
-    body: serviceRows,
-    headStyles: {
-      fillColor: [109, 40, 217],   // purple-700 — más oscuro (tabla principal)
-      fontStyle: 'bold', fontSize: 9,
-      textColor: [255, 255, 255],
-    },
-    alternateRowStyles: { fillColor: [234, 224, 255] },
-    styles: {
-      fontSize: 9, cellPadding: 4,
-      textColor: [45, 20, 75],
-      fillColor: FRAME_BG,         // mismo color que el fondo del marco → esquinas seamless
-      lineColor: [210, 193, 242],
-      lineWidth: 0.2,
-    },
-    columnStyles: {
-      1: { halign: 'center' },
-      2: { halign: 'center', textColor: [22, 163, 74] },
-      3: { halign: 'center', textColor: [165, 35, 35] },
-      4: { halign: 'right', fontStyle: 'bold' },
-    },
-    didParseCell: (data) => {
-      if (data.section === 'body' && data.row.index === serviceRows.length - 1) {
-        data.cell.styles.fontStyle = 'bold'
-        data.cell.styles.fillColor = [88, 28, 180]   // morado oscuro total
-        data.cell.styles.textColor = [255, 255, 255]
-      }
-    },
+    // Línea separadora muy sutil
+    doc.setDrawColor(225, 215, 245)
+    doc.setLineWidth(0.15)
+    doc.line(LM, y + ROW, LM + 182, y + ROW)
+
+    // Punto de acento morado
+    doc.setFillColor(167, 139, 250)
+    doc.circle(LM + 5.5, y + ROW / 2, 1.6, 'F')
+
+    // Nombre del servicio
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(8.5)
+    doc.setTextColor(50, 20, 80)
+    doc.text(type, LM + 10, y + 6)
+
+    // Agendadas
+    doc.setFont('helvetica', 'normal')
+    doc.setFontSize(8.5)
+    doc.setTextColor(70, 50, 90)
+    doc.text(String(tc.total), CX[1] + CW[1] / 2, y + 6, { align: 'center' })
+
+    // Completadas — verde
+    doc.setFont('helvetica', 'bold')
+    doc.setTextColor(22, 163, 74)
+    doc.text(String(tc.attended), CX[2] + CW[2] / 2, y + 6, { align: 'center' })
+
+    // No efectuadas — rojo si > 0, gris si 0
+    doc.setFont('helvetica', 'normal')
+    doc.setTextColor(...(tc.absent > 0 ? [185, 40, 40] : [170, 155, 185]))
+    doc.text(String(tc.absent), CX[3] + CW[3] / 2, y + 6, { align: 'center' })
+
+    // Monto — alineado a la derecha
+    doc.setFont('helvetica', 'bold')
+    doc.setTextColor(50, 20, 80)
+    doc.text(
+      tc.montoAgendado > 0 ? formatCLP(tc.montoAgendado) : '—',
+      CX[4] + CW[4] - 1, y + 6, { align: 'right' }
+    )
+
+    y += ROW
   })
 
-  // Marco redondeado al tamaño real de la tabla — sin cuadrados blancos
-  const tableEndY = doc.lastAutoTable.finalY
-  doc.setDrawColor(145, 100, 218)
-  doc.setLineWidth(0.7)
-  doc.roundedRect(14, tableStartY, 182, tableEndY - tableStartY, 4, 4, 'D')
+  // ── Fila TOTAL ───────────────────────────────────────────────────────────
+  // fondo morado medio con esquinas redondeadas abajo
+  doc.setFillColor(109, 40, 217)
+  doc.rect(LM, y, 182, R, 'F')                     // anula esquinas redondeadas arriba
+  doc.roundedRect(LM, y, 182, TOT, R, R, 'F')
 
-  y = tableEndY + 8
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(9)
+  doc.setTextColor(255, 255, 255)
+  doc.text('TOTAL', LM + 10, y + 7)
+  doc.text(String(row.total),    CX[1] + CW[1] / 2, y + 7, { align: 'center' })
+  doc.text(String(row.attended), CX[2] + CW[2] / 2, y + 7, { align: 'center' })
+  doc.text(String(row.absent),   CX[3] + CW[3] / 2, y + 7, { align: 'center' })
+  doc.text(
+    row.montoTotal > 0 ? formatCLP(row.montoTotal) : '—',
+    CX[4] + CW[4] - 1, y + 7, { align: 'right' }
+  )
+
+  y += TOT + 8
 
   // ── Nota "No efectuada" — caja info centrada con icono circular ──────────
   const noteH  = 20
