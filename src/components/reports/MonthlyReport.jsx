@@ -193,14 +193,11 @@ function drawHeader(doc, y = 14) {
 // ── PDF individual paciente ───────────────────────────────────────────────────
 async function exportPatientPDF(row, reportName, recargoRules) {
   const siiLogoPng = await loadSiiLogoPng(400, 340)
-  const DIAS_LABEL = ['Domingo','Lunes','Martes','Miércoles','Jueves','Viernes','Sábado']
-  const rr        = recargoRules ?? DEFAULT_RECARGO_RULES
-  const fdsHoraL  = rr.fds?.desdeHora ?? 20
-  const fdsDiaL   = DIAS_LABEL[rr.fds?.desdeDia ?? 5]
-  const fhHoraL   = rr.fueraDeHorario?.hora ?? 20
-  const doc    = new jsPDF()
-  const purple = [124, 58, 237]
-  const gray   = [100, 100, 100]
+  const doc   = new jsPDF()
+  // Paleta profesional: azul marino oscuro como acento, sin morado
+  const DARK  = [30, 41, 59]    // slate-800 — textos y encabezados
+  const NAVY  = [30, 64, 175]   // blue-700  — barras de sección y bordes
+  const GRAY  = [100, 100, 100]
   let y = 14
 
   y = drawHeader(doc, y)
@@ -208,71 +205,47 @@ async function exportPatientPDF(row, reportName, recargoRules) {
   // ── Título + período ──────────────────────────────────────────────────────
   doc.setFont('helvetica', 'bold')
   doc.setFontSize(12)
-  doc.setTextColor(...purple)
+  doc.setTextColor(...DARK)
   doc.text('INFORME DE ATENCIONES FONOAUDIOLÓGICAS', 14, y); y += 6
   if (reportName) {
     doc.setFont('helvetica', 'normal')
     doc.setFontSize(9)
-    doc.setTextColor(...gray)
+    doc.setTextColor(...GRAY)
     doc.text(`Período: ${reportName}`, 14, y)
     doc.text(`Emitido: ${new Date().toLocaleDateString('es-CL', { day: 'numeric', month: 'long', year: 'numeric' })}`, 196, y, { align: 'right' })
-    y += 6
+    y += 5
   }
 
-  // ── Tarjeta del paciente ──────────────────────────────────────────────────
-  const cardH = row.description ? 28 : 24
-  doc.setFillColor(245, 240, 255)
-  doc.setDrawColor(200, 175, 245)
+  // ── Nombre del paciente (sin tarjeta de stats) ────────────────────────────
+  doc.setDrawColor(200, 210, 230)
   doc.setLineWidth(0.3)
-  doc.roundedRect(14, y, 182, cardH, 3, 3, 'FD')
-  doc.setFillColor(...purple)
-  doc.roundedRect(14, y, 4, cardH, 2, 2, 'F')  // acento izquierdo
-
+  doc.line(14, y + 2, 196, y + 2)
+  y += 5
   doc.setFont('helvetica', 'bold')
-  doc.setFontSize(12)
-  doc.setTextColor(30, 30, 30)
-  doc.text(row.patientName, 22, y + 7)
-
+  doc.setFontSize(13)
+  doc.setTextColor(...DARK)
+  doc.text(row.patientName, 14, y + 5)
   if (row.description) {
     doc.setFont('helvetica', 'italic')
     doc.setFontSize(8.5)
-    doc.setTextColor(...gray)
-    doc.text(row.description, 22, y + 13)
+    doc.setTextColor(...GRAY)
+    doc.text(row.description, 14, y + 10)
+    y += 14
+  } else {
+    y += 9
   }
-
-  // Stat badges dentro de la tarjeta
-  const statY   = y + (row.description ? 19 : 14)
-  const statDefs = [
-    { label: 'Agendadas',   val: String(row.total),    bg: [210, 195, 250], fg: [70, 20, 160] },
-    { label: 'Completadas', val: String(row.attended),  bg: [187, 247, 208], fg: [20, 100, 50]  },
-    { label: 'No efectuadas', val: String(row.absent),  bg: row.absent > 0 ? [254, 202, 202] : [229, 231, 235], fg: row.absent > 0 ? [150, 20, 20] : [100,100,100] },
-    { label: 'Asistencia',  val: `${row.pct}%`,         bg: row.pct >= 80 ? [187, 247, 208] : [255, 220, 170], fg: row.pct >= 80 ? [20, 100, 50] : [130, 60, 10] },
-  ]
-  let sx = 22
-  statDefs.forEach(({ label, val, bg, fg }) => {
-    const w = 40
-    doc.setFillColor(...bg)
-    doc.roundedRect(sx, statY - 4, w, 8, 2, 2, 'F')
-    doc.setFont('helvetica', 'bold')
-    doc.setFontSize(8.5)
-    doc.setTextColor(...fg)
-    doc.text(val, sx + w / 2, statY + 0.5, { align: 'center' })
-    doc.setFont('helvetica', 'normal')
-    doc.setFontSize(6)
-    doc.text(label, sx + w / 2, statY + 3.5, { align: 'center' })
-    sx += w + 4
-  })
-
-  y += cardH + 8
+  doc.setDrawColor(200, 210, 230)
+  doc.line(14, y + 1, 196, y + 1)
+  y += 7
 
   // ── Separador sección resumen ─────────────────────────────────────────────
-  doc.setFillColor(...purple)
-  doc.rect(14, y, 4, 5, 'F')
+  doc.setFillColor(...NAVY)
+  doc.rect(14, y, 3, 5, 'F')
   doc.setFont('helvetica', 'bold')
   doc.setFontSize(9.5)
-  doc.setTextColor(...purple)
-  doc.text('Resumen por tipo de servicio', 21, y + 4)
-  doc.setDrawColor(200, 180, 245)
+  doc.setTextColor(...NAVY)
+  doc.text('Resumen por tipo de servicio', 20, y + 4)
+  doc.setDrawColor(180, 200, 235)
   doc.setLineWidth(0.2)
   doc.line(14, y + 6, 196, y + 6)
   y += 10
@@ -299,8 +272,8 @@ async function exportPatientPDF(row, reportName, recargoRules) {
     startY: y,
     head: [['Servicio', 'Agendadas', 'Completadas', 'No efectuadas', 'Monto Bruto']],
     body: serviceRows,
-    headStyles: { fillColor: purple, fontStyle: 'bold', fontSize: 9, textColor: [255, 255, 255] },
-    alternateRowStyles: { fillColor: [250, 247, 255] },
+    headStyles: { fillColor: DARK, fontStyle: 'bold', fontSize: 9, textColor: [255, 255, 255] },
+    alternateRowStyles: { fillColor: [247, 249, 252] },
     styles: { fontSize: 9, cellPadding: 3.5 },
     columnStyles: {
       1: { halign: 'center' },
@@ -311,36 +284,40 @@ async function exportPatientPDF(row, reportName, recargoRules) {
     didParseCell: (data) => {
       if (data.section === 'body' && data.row.index === serviceRows.length - 1) {
         data.cell.styles.fontStyle = 'bold'
-        data.cell.styles.fillColor = [230, 218, 255]
-        data.cell.styles.textColor = [50, 10, 130]
+        data.cell.styles.fillColor = [219, 234, 254]
+        data.cell.styles.textColor = [30, 64, 175]
       }
     },
   })
   y = doc.lastAutoTable.finalY + 5
 
-  // ── Nota "No efectuada" entre tablas — visible para el cliente ────────────
-  doc.setFillColor(255, 248, 235)
-  doc.setDrawColor(210, 160, 60)
+  // ── Nota "No efectuada" entre tablas — informativa, estilo info azul ──────
+  const noteH = 14
+  doc.setFillColor(239, 246, 255)
+  doc.setDrawColor(147, 197, 253)
   doc.setLineWidth(0.25)
-  doc.roundedRect(14, y, 182, 8, 2, 2, 'FD')
-  doc.setFillColor(210, 140, 20)
-  doc.roundedRect(14, y, 3, 8, 1, 1, 'F')
+  doc.roundedRect(14, y, 182, noteH, 2, 2, 'FD')
+  doc.setFillColor(59, 130, 246)
+  doc.roundedRect(14, y, 3, noteH, 1, 1, 'F')
   doc.setFont('helvetica', 'bold')
   doc.setFontSize(7.5)
-  doc.setTextColor(120, 70, 10)
-  doc.text('No efectuada:', 20, y + 5)
+  doc.setTextColor(30, 64, 175)
+  doc.text('ℹ  Agenda no efectuada:', 20, y + 5)
   doc.setFont('helvetica', 'normal')
-  doc.text('sesión registrada en el calendario que no se realizó (inasistencia, cancelación u otro motivo).', 46, y + 5)
-  y += 14
+  doc.setFontSize(7.5)
+  doc.setTextColor(30, 64, 175)
+  doc.text('Sesión registrada en el calendario que no pudo realizarse (inasistencia, cancelación o', 20, y + 9.5)
+  doc.text('reprogramación). Queda registrada para trazabilidad pero no genera cobro adicional.', 20, y + 13)
+  y += noteH + 6
 
   // ── Separador sección detalle ─────────────────────────────────────────────
-  doc.setFillColor(...purple)
-  doc.rect(14, y, 4, 5, 'F')
+  doc.setFillColor(...NAVY)
+  doc.rect(14, y, 3, 5, 'F')
   doc.setFont('helvetica', 'bold')
   doc.setFontSize(9.5)
-  doc.setTextColor(...purple)
-  doc.text('Detalle de sesiones', 21, y + 4)
-  doc.setDrawColor(200, 180, 245)
+  doc.setTextColor(...NAVY)
+  doc.text('Detalle de sesiones', 20, y + 4)
+  doc.setDrawColor(180, 200, 235)
   doc.setLineWidth(0.2)
   doc.line(14, y + 6, 196, y + 6)
   y += 10
@@ -365,7 +342,7 @@ async function exportPatientPDF(row, reportName, recargoRules) {
   if (dayKeys.length === 0) {
     doc.setFont('helvetica', 'italic')
     doc.setFontSize(9)
-    doc.setTextColor(...gray)
+    doc.setTextColor(...GRAY)
     doc.text('Sin sesiones con horario definido en este período.', 14, y)
     y += 8
   } else {
@@ -399,11 +376,11 @@ async function exportPatientPDF(row, reportName, recargoRules) {
       startY: y,
       head: [['Fecha', 'Horario', 'Tipo', 'Estado', 'Monto']],
       body: allRows,
-      headStyles: { fillColor: [80, 40, 180], fontStyle: 'bold', fontSize: 9, textColor: [255, 255, 255] },
+      headStyles: { fillColor: DARK, fontStyle: 'bold', fontSize: 9, textColor: [255, 255, 255] },
       alternateRowStyles: {},
       styles: { fontSize: 8.5, cellPadding: 2.8 },
       columnStyles: {
-        0: { cellWidth: 40, fontStyle: 'bold', textColor: [60, 20, 140] },
+        0: { cellWidth: 40, fontStyle: 'bold', textColor: [...DARK] },
         1: { cellWidth: 27 },
         2: { cellWidth: 28 },
         3: { cellWidth: 51 },
@@ -413,11 +390,11 @@ async function exportPatientPDF(row, reportName, recargoRules) {
         if (data.section !== 'body') return
         const idx = data.row.index
         if (subtotalRowIdxs.includes(idx)) {
-          data.cell.styles.fillColor = [235, 230, 255]
+          data.cell.styles.fillColor = [219, 234, 254]
           data.cell.styles.fontStyle = 'bold'
-          data.cell.styles.textColor = [70, 20, 160]
+          data.cell.styles.textColor = [30, 64, 175]
         } else if (dayHeaderIdxs.includes(idx)) {
-          data.cell.styles.fillColor = [248, 244, 255]
+          data.cell.styles.fillColor = [244, 246, 250]
         }
         if (data.column.index === 3 && !subtotalRowIdxs.includes(idx)) {
           const val = data.cell.raw
