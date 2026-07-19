@@ -84,7 +84,7 @@ function buildUniqueRows(events, sessionMap, patientMap, serviceTypes, recargoRu
     const durHours   = calcDuration(ev.start?.dateTime, ev.end?.dateTime)
     const st         = serviceTypes.find((s) => s.displayName === type)
     const precioBase = calcPrecioSesion(st, durHours)
-    const recargo    = calcRecargo(ev.start?.dateTime, st, recargoRules)
+    const recargo    = calcRecargo(ev.start?.dateTime, st, recargoRules, durHours)
     const precio     = precioBase !== undefined
       ? precioBase + recargo.total
       : (recargo.total > 0 ? recargo.total : undefined)
@@ -205,33 +205,79 @@ async function exportPatientPDF(row, reportName, recargoRules) {
 
   y = drawHeader(doc, y)
 
-  // Título
+  // ── Título + período ──────────────────────────────────────────────────────
   doc.setFont('helvetica', 'bold')
-  doc.setFontSize(13)
+  doc.setFontSize(12)
   doc.setTextColor(...purple)
-  doc.text('INFORME DE ATENCIONES FONOAUDIOLÓGICAS', 14, y); y += 7
-
-  // Datos del período / paciente
-  doc.setFont('helvetica', 'normal')
-  doc.setFontSize(9.5)
-  doc.setTextColor(...gray)
-  if (reportName) { doc.text(`Período: ${reportName}`, 14, y); y += 5 }
-  doc.setFont('helvetica', 'bold')
-  doc.setFontSize(11)
-  doc.setTextColor(30, 30, 30)
-  doc.text(row.patientName, 14, y); y += 5
-  if (row.description) {
-    doc.setFont('helvetica', 'italic')
+  doc.text('INFORME DE ATENCIONES FONOAUDIOLÓGICAS', 14, y); y += 6
+  if (reportName) {
+    doc.setFont('helvetica', 'normal')
     doc.setFontSize(9)
     doc.setTextColor(...gray)
-    doc.text(row.description, 14, y); y += 5
+    doc.text(`Período: ${reportName}`, 14, y)
+    doc.text(`Emitido: ${new Date().toLocaleDateString('es-CL', { day: 'numeric', month: 'long', year: 'numeric' })}`, 196, y, { align: 'right' })
+    y += 6
   }
-  doc.setFont('helvetica', 'normal')
-  doc.setFontSize(9.5)
-  doc.setTextColor(...gray)
-  doc.text(`Asistencia global: ${row.pct}%  (${row.attended} completadas de ${row.total} sesiones agendadas)`, 14, y); y += 7
 
-  // ── Tabla resumen por tipo de servicio ────────────────────────────────────
+  // ── Tarjeta del paciente ──────────────────────────────────────────────────
+  const cardH = row.description ? 28 : 24
+  doc.setFillColor(245, 240, 255)
+  doc.setDrawColor(200, 175, 245)
+  doc.setLineWidth(0.3)
+  doc.roundedRect(14, y, 182, cardH, 3, 3, 'FD')
+  doc.setFillColor(...purple)
+  doc.roundedRect(14, y, 4, cardH, 2, 2, 'F')  // acento izquierdo
+
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(12)
+  doc.setTextColor(30, 30, 30)
+  doc.text(row.patientName, 22, y + 7)
+
+  if (row.description) {
+    doc.setFont('helvetica', 'italic')
+    doc.setFontSize(8.5)
+    doc.setTextColor(...gray)
+    doc.text(row.description, 22, y + 13)
+  }
+
+  // Stat badges dentro de la tarjeta
+  const statY   = y + (row.description ? 19 : 14)
+  const statDefs = [
+    { label: 'Agendadas',   val: String(row.total),    bg: [210, 195, 250], fg: [70, 20, 160] },
+    { label: 'Completadas', val: String(row.attended),  bg: [187, 247, 208], fg: [20, 100, 50]  },
+    { label: 'No efectuadas', val: String(row.absent),  bg: row.absent > 0 ? [254, 202, 202] : [229, 231, 235], fg: row.absent > 0 ? [150, 20, 20] : [100,100,100] },
+    { label: 'Asistencia',  val: `${row.pct}%`,         bg: row.pct >= 80 ? [187, 247, 208] : [255, 220, 170], fg: row.pct >= 80 ? [20, 100, 50] : [130, 60, 10] },
+  ]
+  let sx = 22
+  statDefs.forEach(({ label, val, bg, fg }) => {
+    const w = 40
+    doc.setFillColor(...bg)
+    doc.roundedRect(sx, statY - 4, w, 8, 2, 2, 'F')
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(8.5)
+    doc.setTextColor(...fg)
+    doc.text(val, sx + w / 2, statY + 0.5, { align: 'center' })
+    doc.setFont('helvetica', 'normal')
+    doc.setFontSize(6)
+    doc.text(label, sx + w / 2, statY + 3.5, { align: 'center' })
+    sx += w + 4
+  })
+
+  y += cardH + 8
+
+  // ── Separador sección resumen ─────────────────────────────────────────────
+  doc.setFillColor(...purple)
+  doc.rect(14, y, 4, 5, 'F')
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(9.5)
+  doc.setTextColor(...purple)
+  doc.text('Resumen por tipo de servicio', 21, y + 4)
+  doc.setDrawColor(200, 180, 245)
+  doc.setLineWidth(0.2)
+  doc.line(14, y + 6, 196, y + 6)
+  y += 10
+
+  // ── Tabla resumen ─────────────────────────────────────────────────────────
   const typeEntries = Object.entries(row.typeCounts).filter(([, tc]) => tc.total > 0)
 
   const serviceRows = typeEntries.map(([type, tc]) => [
@@ -246,38 +292,60 @@ async function exportPatientPDF(row, reportName, recargoRules) {
     row.total,
     row.attended,
     row.absent,
-    row.montoTotal > 0 ? `${formatCLP(row.montoTotal)} (BRUTO)` : '—',
+    row.montoTotal > 0 ? formatCLP(row.montoTotal) : '—',
   ])
 
   autoTable(doc, {
     startY: y,
-    head: [['Servicio', 'Agendadas', 'Completadas', 'No efect.', 'Monto Bruto']],
+    head: [['Servicio', 'Agendadas', 'Completadas', 'No efectuadas', 'Monto Bruto']],
     body: serviceRows,
-    headStyles: { fillColor: purple, fontStyle: 'bold', fontSize: 9 },
-    alternateRowStyles: { fillColor: [253, 248, 240] },
-    styles: { fontSize: 9, cellPadding: 3 },
+    headStyles: { fillColor: purple, fontStyle: 'bold', fontSize: 9, textColor: [255, 255, 255] },
+    alternateRowStyles: { fillColor: [250, 247, 255] },
+    styles: { fontSize: 9, cellPadding: 3.5 },
     columnStyles: {
       1: { halign: 'center' },
-      2: { halign: 'center' },
-      3: { halign: 'center' },
+      2: { halign: 'center', textColor: [22, 163, 74] },
+      3: { halign: 'center', textColor: [180, 40, 40] },
       4: { halign: 'right', fontStyle: 'bold' },
     },
     didParseCell: (data) => {
       if (data.section === 'body' && data.row.index === serviceRows.length - 1) {
         data.cell.styles.fontStyle = 'bold'
-        data.cell.styles.fillColor = [230, 220, 255]
+        data.cell.styles.fillColor = [230, 218, 255]
+        data.cell.styles.textColor = [50, 10, 130]
       }
     },
   })
-  y = doc.lastAutoTable.finalY + 10
+  y = doc.lastAutoTable.finalY + 5
 
-  // ── Tabla de detalle consolidada (una sola grilla) ────────────────────────
+  // ── Nota "No efectuada" entre tablas — visible para el cliente ────────────
+  doc.setFillColor(255, 248, 235)
+  doc.setDrawColor(210, 160, 60)
+  doc.setLineWidth(0.25)
+  doc.roundedRect(14, y, 182, 8, 2, 2, 'FD')
+  doc.setFillColor(210, 140, 20)
+  doc.roundedRect(14, y, 3, 8, 1, 1, 'F')
   doc.setFont('helvetica', 'bold')
-  doc.setFontSize(11)
-  doc.setTextColor(...purple)
-  doc.text('Detalle de sesiones', 14, y); y += 5
+  doc.setFontSize(7.5)
+  doc.setTextColor(120, 70, 10)
+  doc.text('No efectuada:', 20, y + 5)
+  doc.setFont('helvetica', 'normal')
+  doc.text('sesión registrada en el calendario que no se realizó (inasistencia, cancelación u otro motivo).', 46, y + 5)
+  y += 14
 
-  // Agrupar sesiones por fecha
+  // ── Separador sección detalle ─────────────────────────────────────────────
+  doc.setFillColor(...purple)
+  doc.rect(14, y, 4, 5, 'F')
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(9.5)
+  doc.setTextColor(...purple)
+  doc.text('Detalle de sesiones', 21, y + 4)
+  doc.setDrawColor(200, 180, 245)
+  doc.setLineWidth(0.2)
+  doc.line(14, y + 6, 196, y + 6)
+  y += 10
+
+  // ── Tabla de detalle consolidada ──────────────────────────────────────────
   const byDay = {}
   ;(row.sessions ?? []).forEach((s) => {
     if (!s.startDateTime?.includes('T')) return
@@ -301,15 +369,13 @@ async function exportPatientPDF(row, reportName, recargoRules) {
     doc.text('Sin sesiones con horario definido en este período.', 14, y)
     y += 8
   } else {
-    // Construir filas de la tabla consolidada
-    const allRows = []
-    const subtotalRowIdxs = []  // índices de filas subtotal para estilo diferente
-    const dayHeaderIdxs   = []  // índices de primera sesión del día
+    const allRows         = []
+    const subtotalRowIdxs = []
+    const dayHeaderIdxs   = []
 
     dayKeys.forEach((key) => {
       const { label, sessions: daySessions } = byDay[key]
       const dayMonto = daySessions.reduce((a, s) => a + (s.precio ?? 0), 0)
-      const dayHoras = daySessions.reduce((a, s) => a + (s.durHours ?? 0), 0)
       const capLabel = label.charAt(0).toUpperCase() + label.slice(1)
 
       daySessions.forEach((s, idx) => {
@@ -317,109 +383,81 @@ async function exportPatientPDF(row, reportName, recargoRules) {
         const fin    = s.endDateTime?.includes('T')
           ? new Date(s.endDateTime).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' })
           : '—'
-        const estado = s.attended === true
-          ? '✓ Completado'
-          : s.attended === false
-            ? '✗ No efectuada'
-            : '— Sin registrar'
-        const recargoExtra = (s.recargoFds ?? 0) + (s.recargoFuera ?? 0)
-        const precioLabel  = s.precio !== undefined
-          ? recargoExtra > 0
-            ? `${formatCLP(s.precio)}\n(incl. +${formatCLP(recargoExtra)} ${s.esFds ? 'fds' : 'f.h.'})`
-            : formatCLP(s.precio)
-          : '—'
+        const estado = s.attended === true  ? '✓ Completado'
+                     : s.attended === false ? '✗ No efectuada'
+                     : '— Sin registrar'
         if (idx === 0) dayHeaderIdxs.push(allRows.length)
-        allRows.push([idx === 0 ? capLabel : '', `${ini}–${fin}`, s.type, estado, precioLabel])
+        allRows.push([idx === 0 ? capLabel : '', `${ini}–${fin}`, s.type, estado,
+                      s.precio !== undefined ? formatCLP(s.precio) : '—'])
       })
 
-      // Fila subtotal del día
       subtotalRowIdxs.push(allRows.length)
-      allRows.push([
-        '', 'Subtotal', '', '',
-        dayMonto > 0 ? formatCLP(dayMonto) : '—',
-      ])
+      allRows.push(['', 'Subtotal', '', '', dayMonto > 0 ? formatCLP(dayMonto) : '—'])
     })
 
-    // 5 columnas: Fecha | Horario | Tipo | Estado | Precio  (sin Dur.)
     autoTable(doc, {
       startY: y,
       head: [['Fecha', 'Horario', 'Tipo', 'Estado', 'Monto']],
       body: allRows,
-      headStyles: { fillColor: purple, fontStyle: 'bold', fontSize: 9 },
-      alternateRowStyles: {},   // manejamos fondo manualmente
-      styles: { fontSize: 8.5, cellPadding: 2.5 },
+      headStyles: { fillColor: [80, 40, 180], fontStyle: 'bold', fontSize: 9, textColor: [255, 255, 255] },
+      alternateRowStyles: {},
+      styles: { fontSize: 8.5, cellPadding: 2.8 },
       columnStyles: {
-        0: { cellWidth: 38, fontStyle: 'bold' },
-        1: { cellWidth: 28 },
+        0: { cellWidth: 40, fontStyle: 'bold', textColor: [60, 20, 140] },
+        1: { cellWidth: 27 },
         2: { cellWidth: 28 },
-        3: { cellWidth: 52 },
+        3: { cellWidth: 51 },
         4: { cellWidth: 36, halign: 'right', fontStyle: 'bold' },
       },
       didParseCell: (data) => {
         if (data.section !== 'body') return
         const idx = data.row.index
-
         if (subtotalRowIdxs.includes(idx)) {
-          data.cell.styles.fillColor = [242, 242, 248]
-          data.cell.styles.fontStyle = 'italic'
-          data.cell.styles.textColor = [90, 90, 110]
+          data.cell.styles.fillColor = [235, 230, 255]
+          data.cell.styles.fontStyle = 'bold'
+          data.cell.styles.textColor = [70, 20, 160]
         } else if (dayHeaderIdxs.includes(idx)) {
-          data.cell.styles.fillColor = [245, 240, 255]
+          data.cell.styles.fillColor = [248, 244, 255]
         }
-
-        // Color del estado (col 3 ahora, antes era 4)
         if (data.column.index === 3 && !subtotalRowIdxs.includes(idx)) {
           const val = data.cell.raw
           if (val?.includes('✓'))      data.cell.styles.textColor = [22, 163, 74]
-          else if (val?.includes('✗')) data.cell.styles.textColor = [220, 50, 50]
-          else                         data.cell.styles.textColor = [150, 150, 150]
+          else if (val?.includes('✗')) data.cell.styles.textColor = [200, 40, 40]
+          else                         data.cell.styles.textColor = [160, 160, 160]
         }
       },
     })
-    y = doc.lastAutoTable.finalY + 4
-
-    // Nota regla de recargo (solo si hay sesiones con recargo aplicado)
-    const hasRecargo = (row.sessions ?? []).some((s) => (s.recargoFds ?? 0) + (s.recargoFuera ?? 0) > 0)
-    if (hasRecargo) {
-      doc.setFont('helvetica', 'italic')
-      doc.setFontSize(7.5)
-      doc.setTextColor(130, 130, 130)
-      doc.text(`† Recargo fin de semana: desde ${fdsDiaL} ${fdsHoraL}:00 (sáb y dom todo el día). Recargo fuera de horario: desde las ${fhHoraL}:00 en días laborales.`, 14, y)
-      y += 5
-    }
-    // Nota terminológica
-    doc.setFont('helvetica', 'italic')
-    doc.setFontSize(7.5)
-    doc.setTextColor(130, 130, 130)
-    doc.text('* Agenda no efectuada: sesión que figuraba en el calendario pero no se realizó (inasistencia, cancelación u otro motivo).', 14, y)
-    y += 8
+    y = doc.lastAutoTable.finalY + 8
   }
 
   // ── Glosa SII compacta ────────────────────────────────────────────────────
-  if (y + 14 > 280) { doc.addPage(); y = 20 }
+  if (y + 16 > 280) { doc.addPage(); y = 20 }
 
-  // Logo SII real (SVG convertido a PNG) — o fallback textual si falla la carga
-  const logoW = 9; const logoH = Math.round(logoW * 340 / 400)  // mantiene ratio 400:340
+  doc.setFillColor(245, 245, 250)
+  doc.setDrawColor(180, 180, 210)
+  doc.setLineWidth(0.2)
+  doc.roundedRect(14, y - 2, 182, 13, 2, 2, 'FD')
+
+  const logoW = 9; const logoH = Math.round(logoW * 340 / 400)
   if (siiLogoPng) {
-    doc.addImage(siiLogoPng, 'PNG', 14, y - 1, logoW, logoH)
+    doc.addImage(siiLogoPng, 'PNG', 18, y - 0.5, logoW, logoH)
   } else {
     doc.setFillColor(0, 97, 160)
-    doc.roundedRect(14, y - 1, 14, 10, 1, 1, 'F')
-    doc.setFont('helvetica', 'bold'); doc.setFontSize(8); doc.setTextColor(255, 255, 255)
-    doc.text('SII', 16.5, y + 5.5)
+    doc.roundedRect(18, y, 9, 7, 1, 1, 'F')
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(7); doc.setTextColor(255, 255, 255)
+    doc.text('SII', 19.5, y + 4.5)
   }
 
-  // Texto informativo
-  const textX = 14 + logoW + 4
+  const textX = 18 + logoW + 4
   doc.setFont('helvetica', 'bold')
-  doc.setFontSize(8.5)
-  doc.setTextColor(60, 60, 60)
-  doc.text('INFORMACIÓN TRIBUTARIA', textX, y + 2)
+  doc.setFontSize(8)
+  doc.setTextColor(50, 50, 80)
+  doc.text('INFORMACIÓN TRIBUTARIA', textX, y + 2.5)
   doc.setFont('helvetica', 'normal')
   doc.setFontSize(8)
-  doc.setTextColor(80, 80, 80)
-  doc.text(`Se emitirá Boleta de Honorarios Electrónica por ${formatCLP(row.montoTotal)} (monto bruto).`, textX, y + 7)
-  y += 14
+  doc.setTextColor(80, 80, 100)
+  doc.text(`Se emitirá Boleta de Honorarios Electrónica por ${formatCLP(row.montoTotal)} (monto bruto).`, textX, y + 8)
+  y += 16
 
   doc.save(`informe-${row.patientName.replace(/\s+/g, '-').toLowerCase()}-${reportName?.replace(/\s+/g, '-') ?? 'reporte'}.pdf`)
 }

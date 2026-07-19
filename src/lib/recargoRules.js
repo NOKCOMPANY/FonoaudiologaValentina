@@ -72,13 +72,27 @@ export function recargoLabel(esFds, esFuera) {
 }
 
 /**
- * Calcula el monto de recargo aplicable dado un evento y un tipo de servicio.
- * Los dos recargos son independientes entre sí pero mutuamente excluyentes
- * por la regla de prioridad (fds tiene prioridad total).
+ * Calcula el monto de recargo aplicable dado un evento, tipo de servicio y duración.
+ *
+ * El recargo es POR HORA — se multiplica por la duración real del evento.
+ * Ej: recargoFds.monto = $2.500/hr, durHours = 2h → recargo total = $5.000
+ *
+ * Eventos de día completo (durHours undefined) → recargo = 0.
+ * Fds y fuera de horario son mutuamente excluyentes (fds tiene prioridad).
  */
-export function calcRecargo(startISO, serviceType, rules) {
+export function calcRecargo(startISO, serviceType, rules, durHours) {
   const { esFds, esFuera } = detectRecargos(startISO, rules)
-  const montoFds   = esFds   && serviceType?.recargoFds?.activo   ? (serviceType.recargoFds.monto   ?? 0) : 0
-  const montoFuera = esFuera && serviceType?.recargoFuera?.activo ? (serviceType.recargoFuera.monto ?? 0) : 0
-  return { montoFds, montoFuera, total: montoFds + montoFuera, esFds, esFuera }
+  const hrs         = durHours ?? 0
+  const recargoHora = esFds   && serviceType?.recargoFds?.activo   ? (serviceType.recargoFds.monto   ?? 0)
+                    : esFuera && serviceType?.recargoFuera?.activo ? (serviceType.recargoFuera.monto ?? 0)
+                    : 0
+  const total = recargoHora * hrs
+  return {
+    recargoHora,
+    total,
+    montoFds:   esFds   ? total : 0,
+    montoFuera: esFuera ? total : 0,
+    esFds,
+    esFuera,
+  }
 }
