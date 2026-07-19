@@ -26,7 +26,7 @@ function getInitialStatus(existing) {
   return existing.attended ? STATUS.ATTENDED : STATUS.ABSENT
 }
 
-export function BulkAttendance({ accessToken, serviceTypes = [], patients = [] }) {
+export function BulkAttendance({ accessToken, serviceTypes = [], patients = [], onSaved }) {
   const [open, setOpen]               = useState(false)
   const [selectedPatientId, setSelectedPatientId] = useState('')
   const now = new Date()
@@ -114,8 +114,10 @@ export function BulkAttendance({ accessToken, serviceTypes = [], patients = [] }
     setSaveResult({ ok, fail })
     setSaving(false)
 
-    // Refrescar para mostrar el estado actualizado desde Firestore
-    if (ok > 0) await handleLoad()
+    if (ok > 0) {
+      if (onSaved) onSaved()           // notifica a Admin → PrivateCalendar refresca
+      await handleLoad()               // refresca la propia lista de BulkAttendance
+    }
   }
 
   const stColor  = (name) => serviceTypes.find((st) => st.displayName === name)?.color ?? 'gray'

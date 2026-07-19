@@ -39,11 +39,25 @@ Sitio web y sistema de gestión de sesiones para Valentina Pau Roca, fonoaudiól
 - **CSV individual y CSV general** con todos los campos incluido precio por sesión
 
 ### Regla de precios
-El precio se calcula proporcionalmente según la duración real del evento en Google Calendar:
+
+Cada tipo de servicio puede configurarse en uno de dos modos desde el mantenedor:
+
+| Modo | Campo | Cálculo |
+|---|---|---|
+| **Por hora** (default) | `precioHora` (CLP/hr) | `precio = durHours × precioHora` |
+| **Precio fijo** | `precioFijo` (CLP) + `horasRef` (ref.) | `precio = precioFijo` siempre |
+
+**Modo por hora** — proporcional a la duración real del evento:
 - Sesión de 1:00 h → precio completo
 - Sesión de 0:30 h → precio ÷ 2
 - Sesión de 1:30 h → precio × 1,5
 - Eventos de día completo (sin hora) → sin cálculo
+
+**Modo precio fijo** — monto constante por sesión independiente de la duración:
+- Ej: Taller = $30.000 siempre, ya dure 2 h o 3 h
+- `horasRef` es opcional e informativo (aparece en el PDF como referencia)
+
+> Todos los montos son **brutos** (antes de retención). El campo `tipoPrecio` en Firestore determina el modo; si no existe (registros legacy) se asume `'hora'`.
 
 ---
 

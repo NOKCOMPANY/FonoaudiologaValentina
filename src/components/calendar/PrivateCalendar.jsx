@@ -228,7 +228,7 @@ function SessionCard({ event, existingSession, serviceTypes = [] }) {
   )
 }
 
-export function PrivateCalendar({ selectedDate, serviceTypes = [] }) {
+export function PrivateCalendar({ selectedDate, serviceTypes = [], refreshKey = 0 }) {
   const { accessToken } = useAuth()
   const dateStr = toLocalDateStr(selectedDate)
   const { events, loading, error } = usePrivateEvents(accessToken, dateStr)
@@ -246,7 +246,7 @@ export function PrivateCalendar({ selectedDate, serviceTypes = [] }) {
         setSessionMap(map)
       })
       .catch(() => {})
-  }, [selectedDate])
+  }, [selectedDate, refreshKey])  // refreshKey fuerza re-fetch cuando BulkAttendance guarda
 
   if (loading) return <LoadingSpinner />
   if (error) return (

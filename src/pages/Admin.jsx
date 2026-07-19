@@ -64,6 +64,10 @@ export default function Admin() {
     setPatients(list)
   }, [])
 
+  // Contador de invalidación: incrementar fuerza re-fetch en PrivateCalendar
+  const [sessionRefreshKey, setSessionRefreshKey] = useState(0)
+  const bumpSessionRefresh = useCallback(() => setSessionRefreshKey((k) => k + 1), [])
+
   return (
     <div className="min-h-screen bg-cream font-body">
       <div className="bg-purple text-white px-4 py-4 flex items-center justify-between">
@@ -107,6 +111,7 @@ export default function Admin() {
           accessToken={accessToken}
           serviceTypes={serviceTypes}
           patients={patients}
+          onSaved={bumpSessionRefresh}
         />
 
         <div className="flex flex-wrap items-center gap-3 mb-6">
@@ -121,7 +126,7 @@ export default function Admin() {
         </div>
 
         <h2 className="font-heading text-xl text-gray-700 mb-4">Sesiones del día</h2>
-        <PrivateCalendar selectedDate={selectedDate} serviceTypes={serviceTypes} />
+        <PrivateCalendar selectedDate={selectedDate} serviceTypes={serviceTypes} refreshKey={sessionRefreshKey} />
       </div>
     </div>
   )

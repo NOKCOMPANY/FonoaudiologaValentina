@@ -437,14 +437,19 @@ export function PatientManager({ accessToken, serviceTypes = [], knownTypeNames,
           </div>
           <div className="bg-purple/5 border border-purple/20 rounded-xl px-3 py-2.5">
             <p className="text-purple font-bold text-xs mb-1.5">💰 Regla de precios (monto bruto CLP)</p>
-            <ul className="text-xs text-gray-600 space-y-0.5">
-              <li>• El precio por hora se define en <strong>Tipos de servicio</strong></li>
-              <li>• La duración se calcula desde el horario real del evento en Google Calendar</li>
-              <li className="font-mono text-gray-500">  1:00 h  → precio completo</li>
-              <li className="font-mono text-gray-500">  0:30 h  → precio ÷ 2</li>
-              <li className="font-mono text-gray-500">  1:30 h  → precio × 1,5</li>
-              <li>• Eventos de <strong>día completo</strong> (sin hora) → sin cálculo de precio</li>
-            </ul>
+            <p className="text-xs text-gray-500 mb-1.5">Se configura en <strong>Tipos de servicio</strong> — dos modos disponibles:</p>
+            <div className="space-y-1.5 text-xs">
+              <div className="bg-white border border-purple/10 rounded-lg px-2.5 py-1.5">
+                <p className="font-bold text-gray-700">Por hora <span className="text-gray-400 font-normal">(proporcional)</span></p>
+                <p className="text-gray-500 font-mono">  0:30 h → precio ÷ 2  ·  1:00 h → precio  ·  1:30 h → precio × 1,5</p>
+              </div>
+              <div className="bg-white border border-purple/10 rounded-lg px-2.5 py-1.5">
+                <p className="font-bold text-gray-700">Precio fijo <span className="text-gray-400 font-normal">(por sesión)</span></p>
+                <p className="text-gray-500">Se cobra siempre el mismo monto sin importar la duración real.</p>
+                <p className="text-gray-400 font-mono">  Ej: Taller = $30.000 fija · ref 3 h</p>
+              </div>
+            </div>
+            <p className="text-xs text-gray-400 mt-1.5">• Eventos de <strong>día completo</strong> (sin hora) → sin cálculo de precio en modo por hora</p>
           </div>
         </div>
       )}

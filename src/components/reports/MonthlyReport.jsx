@@ -35,19 +35,29 @@ function formatHours(h) {
   return `${h.toFixed(1)} h`
 }
 
+// ── Helper de precio por sesión (soporta modo 'hora' y 'fijo') ───────────────
+function calcPrecioSesion(st, durHours) {
+  if (!st) return undefined
+  if (st.tipoPrecio === 'fijo') {
+    return st.precioFijo > 0 ? st.precioFijo : undefined
+  }
+  // 'hora' (default cuando tipoPrecio no existe — retrocompatibilidad)
+  if (durHours === undefined || !(st.precioHora > 0)) return undefined
+  return durHours * st.precioHora
+}
+
 // ── Helpers dinámicos desde serviceTypes (usa colorMaps centralizado) ─────────
 function makeHelpers(serviceTypes) {
   const colorOf  = (name) => serviceTypes.find((s) => s.displayName === name)?.color ?? 'gray'
   const textOf   = (name) => colorVariant(colorOf(name), 'text')
   const barOf    = (name) => colorVariant(colorOf(name), 'bar')
   const pdfOf    = (name) => colorVariant(colorOf(name), 'rgb')
-  const precioOf = (name) => serviceTypes.find((s) => s.displayName === name)?.precioHora ?? 0
   const shortOf  = (name) => {
     const st = serviceTypes.find((s) => s.displayName === name)
     if (st?.aliases?.[0]) return st.aliases[0].toUpperCase().slice(0, 4)
     return name.slice(0, 5)
   }
-  return { colorOf, textOf, barOf, pdfOf, precioOf, shortOf }
+  return { colorOf, textOf, barOf, pdfOf, shortOf }
 }
 
 // ── Construcción de filas ─────────────────────────────────────────────────────
@@ -63,9 +73,9 @@ function buildUniqueRows(events, sessionMap, patientMap, serviceTypes) {
     const fullName    = patientMap[pid]?.fullName || null
     const description = patientMap[pid]?.description || null
 
-    const durHours  = calcDuration(ev.start?.dateTime, ev.end?.dateTime)
-    const precioHora = serviceTypes.find((s) => s.displayName === type)?.precioHora ?? 0
-    const precio    = (durHours !== undefined && precioHora > 0) ? durHours * precioHora : undefined
+    const durHours = calcDuration(ev.start?.dateTime, ev.end?.dateTime)
+    const st       = serviceTypes.find((s) => s.displayName === type)
+    const precio   = calcPrecioSesion(st, durHours)
 
     if (!byPatient[pid]) {
       byPatient[pid] = {
@@ -204,7 +214,7 @@ function exportPatientPDF(row, reportName) {
 
   autoTable(doc, {
     startY: y,
-    head: [['Servicio', 'Horas', 'Agendadas', 'Asistidas', 'Ausentes', 'Monto Bruto']],
+    head: [['Servicio', 'Horas', 'Agendadas', 'Asistidas', 'A. no efect.', 'Monto Bruto']],
     body: serviceRows,
     headStyles: { fillColor: purple, fontStyle: 'bold', fontSize: 9 },
     alternateRowStyles: { fillColor: [253, 248, 240] },
@@ -219,13 +229,13 @@ function exportPatientPDF(row, reportName) {
   })
   y = doc.lastAutoTable.finalY + 10
 
-  // ── Detalle por día ───────────────────────────────────────────────────────
+  // ── Tabla de detalle consolidada (una sola grilla) ────────────────────────
   doc.setFont('helvetica', 'bold')
   doc.setFontSize(11)
   doc.setTextColor(...purple)
-  doc.text('Detalle por día', 14, y); y += 5
+  doc.text('Detalle de sesiones', 14, y); y += 5
 
-  // Agrupar sesiones por fecha local
+  // Agrupar sesiones por fecha
   const byDay = {}
   ;(row.sessions ?? []).forEach((s) => {
     if (!s.startDateTime?.includes('T')) return
@@ -233,7 +243,7 @@ function exportPatientPDF(row, reportName) {
     const key = d.toISOString().slice(0, 10)
     if (!byDay[key]) {
       byDay[key] = {
-        label: d.toLocaleDateString('es-CL', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }),
+        label: d.toLocaleDateString('es-CL', { weekday: 'long', day: 'numeric', month: 'long' }),
         sessions: [],
       }
     }
@@ -248,88 +258,114 @@ function exportPatientPDF(row, reportName) {
     doc.setTextColor(...gray)
     doc.text('Sin sesiones con horario definido en este período.', 14, y)
     y += 8
-  }
+  } else {
+    // Construir filas de la tabla consolidada
+    const allRows = []
+    const subtotalRowIdxs = []  // índices de filas subtotal para estilo diferente
+    const dayHeaderIdxs   = []  // índices de primera sesión del día
 
-  dayKeys.forEach((key) => {
-    const { label, sessions: daySessions } = byDay[key]
-    const dayMonto = daySessions.reduce((a, s) => a + (s.precio ?? 0), 0)
-    const dayHoras = daySessions.reduce((a, s) => a + (s.durHours ?? 0), 0)
+    dayKeys.forEach((key) => {
+      const { label, sessions: daySessions } = byDay[key]
+      const dayMonto = daySessions.reduce((a, s) => a + (s.precio ?? 0), 0)
+      const dayHoras = daySessions.reduce((a, s) => a + (s.durHours ?? 0), 0)
+      const capLabel = label.charAt(0).toUpperCase() + label.slice(1)
 
-    // Encabezado del día
-    const sessLabel = `${daySessions.length} sesión${daySessions.length !== 1 ? 'es' : ''}`
-    const dayRows = daySessions.map((s) => {
-      const ini    = new Date(s.startDateTime).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' })
-      const fin    = s.endDateTime?.includes('T')
-        ? new Date(s.endDateTime).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' })
-        : '—'
-      const dur    = s.durHours !== undefined ? formatHours(s.durHours) : '—'
-      const estado = s.attended === true ? '✓ Asistió' : s.attended === false ? '✗ Ausente' : '— Sin marcar'
-      const precio = s.precio !== undefined ? formatCLP(s.precio) : '—'
-      return [`${ini}–${fin}`, dur, s.type, estado, precio]
+      daySessions.forEach((s, idx) => {
+        const ini    = new Date(s.startDateTime).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' })
+        const fin    = s.endDateTime?.includes('T')
+          ? new Date(s.endDateTime).toLocaleTimeString('es-CL', { hour: '2-digit', minute: '2-digit' })
+          : '—'
+        const dur    = s.durHours !== undefined ? formatHours(s.durHours) : '—'
+        const estado = s.attended === true
+          ? '✓ Asistió'
+          : s.attended === false
+            ? '✗ Agenda no efectuada'
+            : '— Sin registrar'
+        const precio = s.precio !== undefined ? formatCLP(s.precio) : '—'
+        if (idx === 0) dayHeaderIdxs.push(allRows.length)
+        allRows.push([idx === 0 ? capLabel : '', `${ini}–${fin}`, dur, s.type, estado, precio])
+      })
+
+      // Fila subtotal del día
+      subtotalRowIdxs.push(allRows.length)
+      allRows.push([
+        '',
+        `Subtotal ${dayHoras > 0 ? formatHours(dayHoras) : ''}`,
+        '', '', '',
+        dayMonto > 0 ? `${formatCLP(dayMonto)} bruto` : '—',
+      ])
     })
-    // Fila subtotal
-    dayRows.push([
-      `Subtotal día: ${formatHours(dayHoras)}`,
-      '', '', '',
-      dayMonto > 0 ? `${formatCLP(dayMonto)} bruto` : '—',
-    ])
 
     autoTable(doc, {
       startY: y,
-      head: [[{ content: `${label.charAt(0).toUpperCase() + label.slice(1)} — ${sessLabel}`, colSpan: 5, styles: { fillColor: [230, 220, 255], textColor: [...purple], fontStyle: 'bold', fontSize: 9 } }],
-             ['Horario', 'Duración', 'Tipo', 'Estado', 'Precio']],
-      body: dayRows,
-      headStyles: { fillColor: [245, 240, 255], textColor: [80, 60, 120], fontSize: 8.5 },
-      alternateRowStyles: { fillColor: [250, 248, 255] },
+      head: [['Fecha', 'Horario', 'Dur.', 'Tipo', 'Estado', 'Precio']],
+      body: allRows,
+      headStyles: { fillColor: purple, fontStyle: 'bold', fontSize: 9 },
+      alternateRowStyles: {},   // sin alternado automático — manejamos manualmente
       styles: { fontSize: 8.5, cellPadding: 2.5 },
       columnStyles: {
-        0: { cellWidth: 32 },
-        1: { cellWidth: 22, halign: 'center' },
-        3: { cellWidth: 28 },
-        4: { cellWidth: 28, halign: 'right', fontStyle: 'bold' },
+        0: { cellWidth: 36, fontStyle: 'bold' },
+        1: { cellWidth: 28 },
+        2: { cellWidth: 16, halign: 'center' },
+        3: { cellWidth: 26 },
+        4: { cellWidth: 46 },
+        5: { cellWidth: 28, halign: 'right', fontStyle: 'bold' },
       },
       didParseCell: (data) => {
-        if (data.section === 'body' && data.row.index === dayRows.length - 1) {
-          data.cell.styles.fillColor = [240, 235, 255]
-          data.cell.styles.fontStyle = 'bold'
+        if (data.section !== 'body') return
+        const idx = data.row.index
+
+        if (subtotalRowIdxs.includes(idx)) {
+          // Fila subtotal: gris claro, italic
+          data.cell.styles.fillColor  = [242, 242, 248]
+          data.cell.styles.fontStyle  = 'italic'
+          data.cell.styles.textColor  = [90, 90, 110]
+        } else if (dayHeaderIdxs.includes(idx)) {
+          // Primera fila del día: fondo lavanda muy suave
+          data.cell.styles.fillColor = [245, 240, 255]
         }
-        if (data.section === 'body' && data.column.index === 3 && data.row.index < dayRows.length - 1) {
+
+        // Color del estado
+        if (data.column.index === 4 && !subtotalRowIdxs.includes(idx)) {
           const val = data.cell.raw
-          data.cell.styles.textColor = val?.includes('✓') ? [22, 163, 74] : val?.includes('✗') ? [220, 50, 50] : [150, 150, 150]
+          if (val?.includes('✓'))    data.cell.styles.textColor = [22, 163, 74]
+          else if (val?.includes('✗')) data.cell.styles.textColor = [220, 50, 50]
+          else                         data.cell.styles.textColor = [150, 150, 150]
         }
       },
     })
-    y = doc.lastAutoTable.finalY + 6
-  })
+    y = doc.lastAutoTable.finalY + 4
 
-  // ── Glosa SII ─────────────────────────────────────────────────────────────
-  y += 4
-  doc.setFillColor(245, 245, 245)
-  doc.setDrawColor(200, 200, 200)
-
-  const siiLines = [
-    'INFORMACIÓN TRIBUTARIA',
-    `Monto Bruto Total del Período: ${formatCLP(row.montoTotal)}`,
-    'Los servicios descritos en este informe son prestaciones de salud fonoaudiológica.',
-    'Para la emisión de la boleta de honorarios correspondiente, el prestador debe ingresar a',
-    'www.sii.cl → Servicios Online → Boleta de Honorarios Electrónica.',
-    'Este documento tiene carácter informativo y no reemplaza la boleta tributaria.',
-  ]
-
-  // Verificar si hay espacio, si no agregar página
-  if (y + siiLines.length * 5 + 12 > 280) {
-    doc.addPage()
-    y = 20
+    // Nota terminológica
+    doc.setFont('helvetica', 'italic')
+    doc.setFontSize(7.5)
+    doc.setTextColor(130, 130, 130)
+    doc.text('* Agenda no efectuada: sesión que figuraba en el calendario pero no se realizó (inasistencia, cancelación u otro motivo).', 14, y)
+    y += 8
   }
 
-  doc.rect(14, y, 182, siiLines.length * 4.5 + 8, 'FD')
-  y += 5
-  siiLines.forEach((line, i) => {
-    doc.setFont('helvetica', i === 0 ? 'bold' : 'normal')
-    doc.setFontSize(i === 0 ? 9 : 8)
-    doc.setTextColor(i === 0 ? 80 : 100, i === 0 ? 80 : 100, i === 0 ? 80 : 100)
-    doc.text(line, 17, y); y += 4.5
-  })
+  // ── Glosa SII compacta ────────────────────────────────────────────────────
+  if (y + 14 > 280) { doc.addPage(); y = 20 }
+
+  // Logo SII (recuadro rojo)
+  const siiRed = [180, 0, 0]
+  doc.setFillColor(...siiRed)
+  doc.roundedRect(14, y - 1, 11, 7, 1, 1, 'F')
+  doc.setFont('helvetica', 'bold')
+  doc.setFontSize(8)
+  doc.setTextColor(255, 255, 255)
+  doc.text('SII', 15.8, y + 4)
+
+  // Texto informativo
+  doc.setFont('helvetica', 'normal')
+  doc.setFontSize(8.5)
+  doc.setTextColor(60, 60, 60)
+  doc.text('INFORMACIÓN TRIBUTARIA', 28, y + 2)
+  doc.setFont('helvetica', 'normal')
+  doc.setFontSize(8)
+  doc.setTextColor(80, 80, 80)
+  doc.text(`Se emitirá Boleta de Honorarios Electrónica por ${formatCLP(row.montoTotal)} (monto bruto).`, 28, y + 7)
+  y += 14
 
   doc.save(`informe-${row.patientName.replace(/\s+/g, '-').toLowerCase()}-${reportName?.replace(/\s+/g, '-') ?? 'reporte'}.pdf`)
 }
@@ -401,7 +437,7 @@ function exportPDF(rows, name) {
 
   autoTable(doc, {
     startY: y,
-    head: [['Paciente', 'Servicios', 'Agendadas', 'Asistidas', 'Ausentes', '%', 'Monto Bruto']],
+    head: [['Paciente', 'Servicios', 'Agendadas', 'Asistidas', 'No efect.', '%', 'Monto Bruto']],
     body: rows.map((r) => [
       r.patientName + (r.description ? `\n${r.description}` : ''),
       Object.entries(r.typeCounts)
@@ -446,7 +482,7 @@ function ReportTable({ report, helpers }) {
         <table className="w-full text-sm font-body">
           <thead className="bg-purple text-white">
             <tr>
-              {['', 'Paciente', 'Servicios', 'Agendadas', 'Asistidas', 'Ausentes', '%', 'Monto Bruto'].map((h, i) => (
+              {['', 'Paciente', 'Servicios', 'Agendadas', 'Asistidas', 'No efect.', '%', 'Monto Bruto'].map((h, i) => (
                 <th key={i} className="py-3 px-3 text-left font-bold whitespace-nowrap">{h}</th>
               ))}
             </tr>

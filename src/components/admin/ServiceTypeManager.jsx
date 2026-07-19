@@ -16,14 +16,24 @@ function TypeForm({ initial, onSave, onCancel, saving }) {
   const [displayName, setDisplayName] = useState(initial?.displayName ?? '')
   const [aliasInput, setAliasInput]   = useState((initial?.aliases ?? []).join(', '))
   const [color, setColor]             = useState(initial?.color ?? 'gray')
+  const [tipoPrecio, setTipoPrecio]   = useState(initial?.tipoPrecio ?? 'hora')
   const [precioHora, setPrecioHora]   = useState(initial?.precioHora ?? '')
+  const [precioFijo, setPrecioFijo]   = useState(initial?.precioFijo ?? '')
+  const [horasRef, setHorasRef]       = useState(initial?.horasRef ?? '')
 
   const handleSubmit = () => {
     if (!displayName.trim()) return
     const aliases = aliasInput.split(',').map((a) => a.trim().toLowerCase()).filter(Boolean)
     if (!aliases.length) aliases.push(slugify(displayName))
     const id = initial?.id ?? slugify(displayName)
-    onSave(id, { id, displayName: displayName.trim(), aliases, color, order: initial?.order ?? 99, precioHora: Number(precioHora) || 0 })
+    onSave(id, {
+      id, displayName: displayName.trim(), aliases, color,
+      order: initial?.order ?? 99,
+      tipoPrecio,
+      precioHora: tipoPrecio === 'hora' ? (Number(precioHora) || 0) : 0,
+      precioFijo: tipoPrecio === 'fijo' ? (Number(precioFijo) || 0) : 0,
+      horasRef:   tipoPrecio === 'fijo' ? (Number(horasRef)   || 0) : 0,
+    })
   }
 
   return (
@@ -55,24 +65,75 @@ function TypeForm({ initial, onSave, onCancel, saving }) {
         <p className="text-xs text-gray-400 mt-1">La primera palabra del evento en el calendario debe ser uno de estos alias.</p>
       </div>
 
+      {/* ── Modo de precio ── */}
       <div>
-        <label className="text-xs font-bold text-gray-500 mb-1 block">
-          Precio por hora <span className="text-gray-400 font-normal">(CLP bruto — opcional)</span>
-        </label>
-        <input
-          type="number"
-          min="0"
-          step="500"
-          placeholder="Ej: 10000"
-          value={precioHora}
-          onChange={(e) => setPrecioHora(e.target.value)}
-          className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple/30"
-        />
-        <p className="text-xs text-gray-400 mt-1">
-          El reporte calcula el monto según la duración real del evento en Google Calendar.
-          Sesión de 30 min = precio ÷ 2 · 1:30 h = precio × 1,5 · Día completo = sin cálculo.
-        </p>
+        <label className="text-xs font-bold text-gray-500 mb-2 block">Modo de precio</label>
+        <div className="flex gap-3">
+          {[
+            { val: 'hora', label: 'Por hora', desc: 'proporcional a duración' },
+            { val: 'fijo', label: 'Precio fijo', desc: 'por sesión, sin importar duración' },
+          ].map(({ val, label, desc }) => (
+            <label key={val} className={`flex-1 flex items-start gap-2 cursor-pointer rounded-xl border px-3 py-2 transition ${
+              tipoPrecio === val ? 'border-purple/40 bg-purple/5' : 'border-gray-200 hover:border-gray-300'
+            }`}>
+              <input type="radio" name="tipoPrecio" value={val} checked={tipoPrecio === val}
+                onChange={() => setTipoPrecio(val)} className="mt-0.5 accent-purple" />
+              <div>
+                <p className="text-xs font-bold text-gray-700">{label}</p>
+                <p className="text-xs text-gray-400">{desc}</p>
+              </div>
+            </label>
+          ))}
+        </div>
       </div>
+
+      {/* ── Campos condicionales de precio ── */}
+      {tipoPrecio === 'hora' && (
+        <div>
+          <label className="text-xs font-bold text-gray-500 mb-1 block">
+            Precio por hora <span className="text-gray-400 font-normal">(CLP bruto — opcional)</span>
+          </label>
+          <input
+            type="number" min="0" step="500" placeholder="Ej: 10000"
+            value={precioHora} onChange={(e) => setPrecioHora(e.target.value)}
+            className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple/30"
+          />
+          <p className="text-xs text-gray-400 mt-1">
+            Sesión de 30 min = precio ÷ 2 · 1:30 h = precio × 1,5 · Día completo = sin cálculo.
+          </p>
+        </div>
+      )}
+
+      {tipoPrecio === 'fijo' && (
+        <div className="space-y-2">
+          <div>
+            <label className="text-xs font-bold text-gray-500 mb-1 block">
+              Precio fijo por sesión <span className="text-gray-400 font-normal">(CLP bruto)</span>
+            </label>
+            <input
+              type="number" min="0" step="500" placeholder="Ej: 30000"
+              value={precioFijo} onChange={(e) => setPrecioFijo(e.target.value)}
+              className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple/30"
+            />
+            <p className="text-xs text-gray-400 mt-1">
+              Se cobra siempre este monto por sesión, independiente de la duración real.
+            </p>
+          </div>
+          <div>
+            <label className="text-xs font-bold text-gray-500 mb-1 block">
+              Duración de referencia <span className="text-gray-400 font-normal">(horas — informativo)</span>
+            </label>
+            <input
+              type="number" min="0" step="0.5" placeholder="Ej: 3"
+              value={horasRef} onChange={(e) => setHorasRef(e.target.value)}
+              className="w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-purple/30"
+            />
+            <p className="text-xs text-gray-400 mt-1">
+              Se muestra en el PDF como referencia (ej: "Taller — $30.000 fijo · ref 3 h").
+            </p>
+          </div>
+        </div>
+      )}
 
       <div>
         <label className="text-xs font-bold text-gray-500 mb-2 block">Color del badge</label>
@@ -182,11 +243,15 @@ export function ServiceTypeManager({ serviceTypes, patientTypeCount, unknownType
                         alias: <span className="font-mono">{(t.aliases ?? []).join(', ')}</span>
                       </p>
                     </div>
-                    {t.precioHora > 0 && (
+                    {t.tipoPrecio === 'fijo' && t.precioFijo > 0 ? (
+                      <span className="text-xs text-gray-400 flex-shrink-0 font-mono">
+                        ${t.precioFijo.toLocaleString('es-CL')} fijo{t.horasRef > 0 ? ` · ${t.horasRef}h ref` : ''}
+                      </span>
+                    ) : t.precioHora > 0 ? (
                       <span className="text-xs text-gray-400 flex-shrink-0 font-mono">
                         ${t.precioHora.toLocaleString('es-CL')}/hr
                       </span>
-                    )}
+                    ) : null}
                     <span className="text-xs text-gray-400 flex-shrink-0">
                       {patientTypeCount[t.displayName] ?? 0} pac.
                     </span>
