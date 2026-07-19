@@ -238,21 +238,40 @@ async function exportPatientPDF(row, reportName, recargoRules) {
   doc.line(14, y + 1, 196, y + 1)
   y += 7
 
-  // ── Separador sección resumen ─────────────────────────────────────────────
+  // ── Tarjeta destacada — Resumen por tipo de servicio ─────────────────────
+  const typeEntries   = Object.entries(row.typeCounts).filter(([, tc]) => tc.total > 0)
+  const pctAsist      = row.total > 0 ? Math.round((row.attended / row.total) * 100) : 0
+  const metricsH      = 16
+  // Estimar altura total del card para dibujar el fondo antes de la tabla
+  const estTableH     = 9 + (typeEntries.length + 1) * 8
+  const estCardH      = 14 + estTableH + 4 + metricsH + 4
+
+  // Capa exterior de glow (simula difuminado morado)
+  doc.setFillColor(232, 222, 255)
+  doc.roundedRect(10, y - 3, 190, estCardH + 6, 6, 6, 'F')
+  doc.setFillColor(239, 232, 255)
+  doc.roundedRect(11.5, y - 2, 187, estCardH + 4, 5, 5, 'F')
+  doc.setFillColor(245, 240, 255)
+  doc.roundedRect(13, y - 1, 184, estCardH + 2, 4, 4, 'F')
+  // Card principal — blanco hueso con borde morado suave
+  doc.setFillColor(252, 250, 255)
+  doc.setDrawColor(200, 178, 245)
+  doc.setLineWidth(0.4)
+  doc.roundedRect(14, y, 182, estCardH, 3, 3, 'FD')
+
+  // Título de la sección dentro del card
   doc.setFillColor(...purpleL)
-  doc.rect(14, y, 4, 5, 'F')
+  doc.rect(14, y, 5, 11, 'F')
   doc.setFont('helvetica', 'bold')
-  doc.setFontSize(9.5)
+  doc.setFontSize(10)
   doc.setTextColor(...purpleL)
-  doc.text('Resumen por tipo de servicio', 21, y + 4)
+  doc.text('Resumen por tipo de servicio', 23, y + 7)
   doc.setDrawColor(200, 180, 245)
   doc.setLineWidth(0.2)
-  doc.line(14, y + 6, 196, y + 6)
-  y += 10
+  doc.line(14, y + 12, 196, y + 12)
+  y += 15
 
-  // ── Tabla resumen ─────────────────────────────────────────────────────────
-  const typeEntries = Object.entries(row.typeCounts).filter(([, tc]) => tc.total > 0)
-
+  // Tabla resumen (dentro del card)
   const serviceRows = typeEntries.map(([type, tc]) => [
     type,
     tc.total,
@@ -270,11 +289,12 @@ async function exportPatientPDF(row, reportName, recargoRules) {
 
   autoTable(doc, {
     startY: y,
+    margin: { left: 16, right: 14 },
     head: [['Servicio', 'Agendadas', 'Completadas', 'No efectuadas', 'Monto Bruto']],
     body: serviceRows,
     headStyles: { fillColor: purpleL, fontStyle: 'bold', fontSize: 9, textColor: [255, 255, 255] },
     alternateRowStyles: { fillColor: [250, 247, 255] },
-    styles: { fontSize: 9, cellPadding: 3.5, textColor: [50, 30, 70] },
+    styles: { fontSize: 9, cellPadding: 3.5, textColor: [50, 30, 70], fillColor: [252, 250, 255] },
     columnStyles: {
       1: { halign: 'center' },
       2: { halign: 'center', textColor: [22, 163, 74] },
@@ -289,7 +309,35 @@ async function exportPatientPDF(row, reportName, recargoRules) {
       }
     },
   })
-  y = doc.lastAutoTable.finalY + 5
+  y = doc.lastAutoTable.finalY + 4
+
+  // Tira de métricas clave al pie del card
+  doc.setFillColor(220, 205, 255)
+  doc.roundedRect(16, y, 178, metricsH, 2, 2, 'F')
+  const metricItems = [
+    { val: String(row.total),            label: 'agendadas'   },
+    { val: String(row.attended),         label: 'completadas' },
+    { val: `${pctAsist}%`,              label: 'asistencia'  },
+    { val: row.montoTotal > 0 ? formatCLP(row.montoTotal) : '—', label: 'monto bruto' },
+  ]
+  const mW = 178 / metricItems.length
+  metricItems.forEach(({ val, label }, i) => {
+    const mx = 16 + i * mW + mW / 2
+    if (i > 0) {
+      doc.setDrawColor(180, 155, 230)
+      doc.setLineWidth(0.2)
+      doc.line(16 + i * mW, y + 2.5, 16 + i * mW, y + metricsH - 2.5)
+    }
+    doc.setFont('helvetica', 'bold')
+    doc.setFontSize(9.5)
+    doc.setTextColor(70, 20, 160)
+    doc.text(val, mx, y + 7, { align: 'center' })
+    doc.setFont('helvetica', 'normal')
+    doc.setFontSize(6.5)
+    doc.setTextColor(120, 90, 165)
+    doc.text(label, mx, y + 12, { align: 'center' })
+  })
+  y += metricsH + 8
 
   // ── Nota "No efectuada" — caja info centrada con icono circular ──────────
   const noteH  = 20
